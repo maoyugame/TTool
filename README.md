@@ -109,7 +109,7 @@ npm run electron:build # 打包桌面应用（electron-builder）
 | **内置工具**（编译期） | 随宿主一起开发/打包的工具，多 agent 并行开发后统一接入 | 往 `src/tools/impl/` 放一个文件（glob 自动发现） | `TOOLS.md` |
 | **外部插件**（运行期） | 独立项目独立构建、独立分发的大型工具，可插拔 | 「扩展」面板从 GitHub Release / 本地安装，动态懒加载 | `PLUGINS.md` |
 
-外部插件系统：受信任动态加载 + 桌面优先；插件构建成 IIFE bundle（react/SDK 外置→复用宿主单例）+ `manifest.json`，宿主按需懒加载、可启停/更新/卸载。SDK 包见 `packages/sdk/`，示例插件见 `examples/hello-tool/`。
+外部插件系统：受信任动态加载 + 桌面优先；插件构建成 IIFE bundle（react/SDK 外置→复用宿主单例）+ `manifest.json`，宿主按需懒加载、可启停/更新/卸载。SDK 以 npm 包 `@ttool/sdk` 分发（源码 `packages/sdk/`，发布前 `prepublishOnly` 编译出 dist），示例插件见 `examples/hello-tool/`。
 
 ## 如何新增一个工具（内置）
 

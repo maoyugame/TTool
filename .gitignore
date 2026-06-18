@@ -15,3 +15,5 @@ scripts/_ssr-bundle.mjs
 scripts/.ssr-out/
 
 examples/*/dist/
+
+packages/sdk/dist/

@@ -46,6 +46,8 @@ TOOLS.md / PLUGINS.md / README.md
 
 3. 路径安全等加固（`safeId`/`safeJoin`/导航拦截）是底线，改动插件加载相关代码时不得削弱。
 
+4. **`@ttool/sdk` 发布在 npm 公共 registry**（源码 `packages/sdk/`，`prepublishOnly` 编译 dist）。SDK 表面变更后：bump `packages/sdk/package.json` 版本（破坏性变更同时 bump `SDK_VERSION` 主版本）→ `cd packages/sdk && npm publish --access public`（需维护者 npm 账号）→ 同步 `TTOOL-PLUGIN-GUIDE.md`。`packages/sdk/src/index.ts` 的类型必须与指南 §4 及 §11 兜底 shim 三处一致。
+
 ## 文档职责
 
 | 文件 | 面向 | 内容 |

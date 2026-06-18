@@ -27,12 +27,12 @@ TTool 是一个跨平台桌面工具平台（Electron + React）。**插件 = �
   tsconfig.json
   manifest.json
   .gitignore
-  types/ttool-sdk.d.ts     ← @ttool/sdk 的本地类型声明（让 TS/编辑器识别，构建时被 external）
   src/index.tsx            ← 插件实现 + defineTool
   (icon.png 可选)
 ```
 
-> 说明：因 `@ttool/sdk` 在构建时被 external（不打进产物），**无需 npm 安装它**；用 `types/ttool-sdk.d.ts` 提供类型即可。运行期由宿主提供实现。
+> **SDK 来源**：`@ttool/sdk` 已发布到 **npm 公共 registry**，作为 devDependency 安装：`npm i -D @ttool/sdk`。它提供类型；构建时被 external（不打进产物），运行期由宿主提供实现。
+> （若 `@ttool/sdk` 尚未发布或离线开发，见 **附录 §11** 的本地 d.ts shim 兜底方案。）
 
 ---
 
@@ -51,6 +51,7 @@ TTool 是一个跨平台桌面工具平台（Electron + React）。**插件 = �
     "dev": "vite build --watch"
   },
   "devDependencies": {
+    "@ttool/sdk": "^1.0.0",
     "@vitejs/plugin-react": "^4.3.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -101,49 +102,11 @@ export default defineConfig({
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src", "types"]
+  "include": ["src"]
 }
 ```
 
-### types/ttool-sdk.d.ts （让 `import ... from '@ttool/sdk'` 有类型；构建时被 external）
-```ts
-declare module '@ttool/sdk' {
-  import type { ComponentType, ReactNode, CSSProperties } from 'react'
-  export type HueName = 'blue' | 'purple' | 'amber' | 'teal' | 'green' | 'indigo' | 'pink' | 'gray'
-  export interface ToolSpec {
-    id: string
-    name: string
-    desc: string
-    glyph: string
-    icon?: string
-    cat: string
-    hue: HueName
-    order?: number
-    keywords?: string
-    component: ComponentType
-  }
-  export function registerTool(spec: ToolSpec): void
-  export function defineTool(spec: ToolSpec): void
-  export const ToolPage: ComponentType<{ scroll?: boolean; children?: ReactNode }>
-  export const ToolHeader: ComponentType<{ glyph: string; icon?: string; hue: HueName; glyphSize?: number; glyphWeight?: number; title: string; subtitle?: ReactNode; right?: ReactNode; mb?: number }>
-  export const Panel: ComponentType<{ label: ReactNode; right?: ReactNode; children?: ReactNode; flex?: boolean }>
-  export const Seg: ComponentType<{ options: { key: string; label: string }[]; value: string; onChange: (k: string) => void }>
-  export const ActionPill: ComponentType<{ onClick: () => void; primary?: boolean; children?: ReactNode }>
-  export const ToolIcon: ComponentType<{ icon?: string; glyph: string; hue: HueName; size: number; radius: number; glyphSize: number; glyphWeight?: number; shadow?: 'list' | 'header' | 'none' }>
-  export const MONO: string
-  export const labelStyle: CSSProperties
-  export function usePersistentState<T>(key: string, initial: T): [T, (v: T | ((prev: T) => T)) => void]
-  export function useToolbox(): { copy(text: string, label?: string): void; flash(msg: string): void; openTool(id: string): void }
-  export function useNow(): number
-  export const platform: {
-    readonly kind: 'web' | 'electron' | 'tauri'
-    readonly isDesktop: boolean
-    copyText(text: string): Promise<void>
-    openExternalApp(path: string): Promise<{ ok: boolean; error?: string }>
-    translate?(text: string, from: string, to: string): Promise<string>
-  }
-}
-```
+> 类型来自已安装的 `@ttool/sdk`。无需本地类型声明文件（除非走附录 §11 的离线兜底）。
 
 ### manifest.json （字段规范见 §6；id 必须全局唯一，sdk 必须为 "1"）
 ```json
@@ -209,7 +172,7 @@ defineTool({ id: 'xxx', name: '我的工具', desc: '一句话描述', glyph: '�
 
 ## 5. 开发 / 构建 / 自测 / 发布
 
-1. `npm install`（仅装 react + vite + plugin-react，**不装 @ttool/sdk**）。
+1. `npm install`（装 react + vite + plugin-react + `@ttool/sdk`）。
 2. 实现 `src/index.tsx`，确保 `defineTool` 的 `id` 与 `manifest.json` 的 `id` 一致。
 3. `npm run build` → 产出 `dist/tool.js`。
 4. **本地自测**：在 TTool 桌面端「设置」开启「开发者模式」→「扩展」→「从本地文件夹安装」，选一个含 `manifest.json` + `dist/tool.js`（及图标）的文件夹即可。建议把 `manifest.json` 与 `dist/tool.js` 放一起，或构建脚本拷到 `dist/`。
@@ -269,3 +232,54 @@ defineTool({ id: 'xxx', name: '我的工具', desc: '一句话描述', glyph: '�
 - [ ] 只用了 §4 列出的 SDK 能力；配色全用 CSS 变量；持久化 key 带 id 前缀
 - [ ] 顶层无副作用初始化
 - [ ] 本地（开发者模式）安装后能在 TTool 启动台看到并打开、功能正常
+
+---
+
+## 11. 附录：离线 / 未发布兜底（本地类型 shim）
+
+正常情况用 `npm i -D @ttool/sdk` 即可。**仅当** `@ttool/sdk` 尚未发布、或需离线开发时，用下面的本地类型声明兜底（构建时 `@ttool/sdk` 仍被 external，无需真实安装）：
+
+1. package.json 的 devDependencies **去掉** `@ttool/sdk`。
+2. tsconfig.json 的 `include` 改为 `["src", "types"]`。
+3. 新建 `types/ttool-sdk.d.ts`：
+
+```ts
+declare module '@ttool/sdk' {
+  import type { ComponentType, ReactNode, CSSProperties } from 'react'
+  export type HueName = 'blue' | 'purple' | 'amber' | 'teal' | 'green' | 'indigo' | 'pink' | 'gray'
+  export interface ToolSpec {
+    id: string
+    name: string
+    desc: string
+    glyph: string
+    icon?: string
+    cat: string
+    hue: HueName
+    order?: number
+    keywords?: string
+    component: ComponentType
+  }
+  export function registerTool(spec: ToolSpec): void
+  export function defineTool(spec: ToolSpec): void
+  export const ToolPage: ComponentType<{ scroll?: boolean; children?: ReactNode }>
+  export const ToolHeader: ComponentType<{ glyph: string; icon?: string; hue: HueName; glyphSize?: number; glyphWeight?: number; title: string; subtitle?: ReactNode; right?: ReactNode; mb?: number }>
+  export const Panel: ComponentType<{ label: ReactNode; right?: ReactNode; children?: ReactNode; flex?: boolean }>
+  export const Seg: ComponentType<{ options: { key: string; label: string }[]; value: string; onChange: (k: string) => void }>
+  export const ActionPill: ComponentType<{ onClick: () => void; primary?: boolean; children?: ReactNode }>
+  export const ToolIcon: ComponentType<{ icon?: string; glyph: string; hue: HueName; size: number; radius: number; glyphSize: number; glyphWeight?: number; shadow?: 'list' | 'header' | 'none' }>
+  export const MONO: string
+  export const labelStyle: CSSProperties
+  export function usePersistentState<T>(key: string, initial: T): [T, (v: T | ((prev: T) => T)) => void]
+  export function useToolbox(): { copy(text: string, label?: string): void; flash(msg: string): void; openTool(id: string): void }
+  export function useNow(): number
+  export const platform: {
+    readonly kind: 'web' | 'electron' | 'tauri'
+    readonly isDesktop: boolean
+    copyText(text: string): Promise<void>
+    openExternalApp(path: string): Promise<{ ok: boolean; error?: string }>
+    translate?(text: string, from: string, to: string): Promise<string>
+  }
+}
+```
+
+> 该 shim 必须与官方 `@ttool/sdk` 类型保持一致；一旦能用 npm 安装，建议改回 §3 的标准方式。

@@ -3,11 +3,35 @@
   "version": "1.0.0",
   "description": "TTool 平台 · 工具插件开发 SDK（类型 + 运行时桥接到宿主单例）",
   "type": "module",
-  "main": "src/index.ts",
-  "module": "src/index.ts",
-  "types": "src/index.ts",
-  "files": ["src"],
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "src"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["ttool", "plugin", "sdk"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maoyugame/TTool.git",
+    "directory": "packages/sdk"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "peerDependencies": {
     "react": "^18 || ^19"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "typescript": "^5.4.5"
   }
 }

@@ -15,7 +15,7 @@
 
 最快路径：复制本仓库的 `examples/hello-tool/` 作为模板。
 
-1. **依赖**：`@ttool/sdk`（开发期类型 + 运行期桥接）、`react`、`vite`、`@vitejs/plugin-react`（均为 dev/peer，不会进产物）。
+1. **依赖**：`npm i -D @ttool/sdk react vite @vitejs/plugin-react`。`@ttool/sdk` 发布在 npm 公共 registry，提供类型 + 运行期桥接；构建时被 external，不进产物。
 2. **写工具**（`src/index.tsx`）：
 
    ```tsx
