@@ -1,0 +1,13 @@
+{
+  "id": "hello",
+  "name": "Hello 插件",
+  "desc": "示例外部插件 · 独立构建、动态安装",
+  "glyph": "👋",
+  "cat": "插件",
+  "hue": "green",
+  "order": 100,
+  "keywords": "hello demo shili",
+  "version": "1.0.0",
+  "entry": "tool.js",
+  "sdk": "1"
+}

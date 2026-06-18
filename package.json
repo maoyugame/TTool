@@ -1,0 +1,57 @@
+{
+  "name": "ttool",
+  "private": true,
+  "version": "0.1.0",
+  "description": "TTool — 跨平台桌面多功能工具集 + 可插拔工具插件平台（指挥官风格启动台 + 标签工作区）",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "smoke": "node scripts/ssr-smoke.mjs",
+    "electron": "electron .",
+    "electron:dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && cross-env TOOLBOX_DEV_URL=http://localhost:5173 electron .\"",
+    "electron:build": "npm run build && electron-builder"
+  },
+  "dependencies": {
+    "pinyin-pro": "^3.28.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.7",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "electron": "^30.0.9",
+    "electron-builder": "^24.13.3",
+    "typescript": "^5.4.5",
+    "vite": "^5.2.11",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.maoyugame.ttool",
+    "productName": "TTool",
+    "files": [
+      "dist/**/*",
+      "electron/**/*"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "category": "public.app-category.utilities"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Utility"
+    }
+  }
+}
