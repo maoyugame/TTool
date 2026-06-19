@@ -184,14 +184,14 @@ close(connId) / ping(connId)              // ping 走 admin().ping()
 | `electron/host/util.cjs` / `index.cjs` | safePluginId+redact / setupHost 编排 | ✅ |
 | `electron/main.cjs` / `preload.cjs` | 接线 + 暴露 net/storage/secrets | ✅ |
 | `src/platform/types.ts` / `electron.ts` / `vite-env.d.ts` | 类型 + 适配 | ✅ |
-| `src/sdk/index.ts` / `App.tsx` / `packages/sdk` | PluginContext + hooks，bump 1.1.0 | ✅ |
+| `src/sdk/index.ts` / `App.tsx` / `packages/sdk` | PluginContext + hooks，bump 1.2.0 | ✅ |
 | `electron/host/mysql.cjs` / `redis.cjs` / `mongo.cjs` | 三 DB 适配器 + `db:*` IPC + `platform.db` 类型 | ⬜ 后续 |
 
 ---
 
 ## 10. 向下兼容
 
-全 **additive**：`platform.net?`/`storage?`/`secrets?`/`db?` 新增，既有插件零影响，`manifest.sdk` 仍 `"1"`。本次 SDK 新增表面 → 已 bump `@maoyugames/ttool-sdk` 1.1.0（待发布）。后续扩展（新协议走 net 无需改 SDK；新 DB / Pub-Sub 事件桥按 additive 追加）不动既有签名。
+全 **additive**：`platform.net?`/`storage?`/`secrets?`/`db?` 新增，既有插件零影响，`manifest.sdk` 仍 `"1"`。本次 net/storage/secrets 表面 → **已发布 `@maoyugames/ttool-sdk` 1.2.0**。db 的 SDK 契约（`platform.db.*` / db hooks）待宿主适配器实现并经真实驱动验证后，随后续版本（1.3.0）additive 追加，不动既有签名（新协议走 net 无需改 SDK）。
 
 ---
 
