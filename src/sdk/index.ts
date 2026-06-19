@@ -21,6 +21,161 @@ import { platform } from '../platform'
 // SDK 版本：与插件 manifest.sdk 做兼容校验用（主版本）。
 export const SDK_VERSION = '1'
 
+// 插件命名空间上下文：宿主在渲染每个工具时用 <PluginContext.Provider value={工具id}> 包裹，
+// 下面的 useStorage / useSecrets / useNet 据此自动注入 pluginId，插件无需自己传 id。
+// 注意：单 webContents 下这是「命名空间」（防键碰撞 / 误读），非对恶意插件的硬隔离（受信任模型）。
+export const PluginContext = React.createContext<string>('')
+const usePluginId = (): string => React.useContext(PluginContext) || ''
+
+// 按插件命名空间的持久化 KV（普通数据：笔记 / 配置 / 收藏）。仅桌面可用。
+export function useStorage() {
+  const pid = usePluginId()
+  return React.useMemo(
+    () => ({
+      get available() {
+        return !!platform.storage
+      },
+      async get<T = unknown>(key: string, fallback?: T): Promise<T | undefined> {
+        const r = await platform.storage?.get<T>(pid, key)
+        if (!r || !r.ok || r.value === undefined) return fallback
+        return r.value
+      },
+      async set(key: string, value: unknown): Promise<boolean> {
+        const r = await platform.storage?.set(pid, key, value)
+        return !!(r && r.ok)
+      },
+      async remove(key: string): Promise<boolean> {
+        const r = await platform.storage?.delete(pid, key)
+        return !!(r && r.ok)
+      },
+      async keys(): Promise<string[]> {
+        const r = await platform.storage?.keys(pid)
+        return (r && r.keys) || []
+      },
+    }),
+    [pid]
+  )
+}
+
+// safeStorage 加密凭证存储（秘钥 / 密码 / 账号 token）。仅桌面可用。
+export function useSecrets() {
+  const pid = usePluginId()
+  return React.useMemo(
+    () => ({
+      async available(): Promise<boolean> {
+        const r = await platform.secrets?.available()
+        return !!(r && r.available)
+      },
+      async get(key: string): Promise<string | undefined> {
+        const r = await platform.secrets?.get(pid, key)
+        return r && r.ok ? r.value : undefined
+      },
+      async set(key: string, value: string): Promise<boolean> {
+        const r = await platform.secrets?.set(pid, key, value)
+        return !!(r && r.ok)
+      },
+      async remove(key: string): Promise<boolean> {
+        const r = await platform.secrets?.delete(pid, key)
+        return !!(r && r.ok)
+      },
+      async keys(): Promise<string[]> {
+        const r = await platform.secrets?.keys(pid)
+        return (r && r.keys) || []
+      },
+    }),
+    [pid]
+  )
+}
+
+// 通用 TCP/TLS 字节管道。仅桌面可用。
+// 组件卸载 / 显式 close / 远端关闭时，自动注销该 socket 的全部 IPC 监听器并关闭连接，
+// 避免渲染层 ipcRenderer 监听器随短连接累积泄漏。
+export function useNet() {
+  const pid = usePluginId()
+  // socketId -> 该 socket 注册的取消订阅集合
+  const subs = React.useRef<Map<string, Set<() => void>>>(new Map())
+  const purge = React.useCallback((socketId: string) => {
+    const set = subs.current.get(socketId)
+    if (set) {
+      for (const off of set) {
+        try {
+          off()
+        } catch {
+          /* ignore */
+        }
+      }
+      subs.current.delete(socketId)
+    }
+  }, [])
+  React.useEffect(
+    () => () => {
+      for (const id of Array.from(subs.current.keys())) {
+        purge(id)
+        platform.net?.close(id)
+      }
+      subs.current.clear()
+    },
+    [purge]
+  )
+  return React.useMemo(() => {
+    const track = (socketId: string, off?: () => void): (() => void) => {
+      if (!off) return () => {}
+      let set = subs.current.get(socketId)
+      if (!set) {
+        set = new Set()
+        subs.current.set(socketId, set)
+      }
+      set.add(off)
+      return () => {
+        set!.delete(off)
+        try {
+          off()
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    return {
+      get available() {
+        return !!platform.net
+      },
+      async connect(opts: { host: string; port: number; tls?: boolean | { servername?: string; rejectUnauthorized?: boolean }; timeoutMs?: number }) {
+        const r = await platform.net?.connect({ ...opts, pluginId: pid })
+        if (r && r.ok && r.socketId) {
+          const id = r.socketId
+          if (!subs.current.has(id)) subs.current.set(id, new Set())
+          // 远端关闭时自动清理该 socket 的全部监听器（延后到本轮事件回调跑完，
+          // 确保插件自己的 onClose 回调仍能先收到关闭事件）。
+          const offClose = platform.net?.onClose(id, () => {
+            Promise.resolve().then(() => purge(id))
+          })
+          if (offClose) subs.current.get(id)!.add(offClose)
+        }
+        return r ?? { ok: false as const, code: 'NO_NET', error: '当前运行时不支持网络能力（仅桌面版）' }
+      },
+      write(socketId: string, data: Uint8Array) {
+        return platform.net?.write(socketId, data) ?? Promise.resolve({ ok: false })
+      },
+      close(socketId: string) {
+        purge(socketId)
+        return platform.net?.close(socketId) ?? Promise.resolve({ ok: false })
+      },
+      onData(socketId: string, cb: (chunk: Uint8Array) => void) {
+        return track(socketId, platform.net?.onData(socketId, cb))
+      },
+      onClose(socketId: string, cb: (info: { hadError: boolean }) => void) {
+        return track(socketId, platform.net?.onClose(socketId, cb))
+      },
+      onError(socketId: string, cb: (err: { error: string; code?: string }) => void) {
+        return track(socketId, platform.net?.onError(socketId, cb))
+      },
+      onDrain(socketId: string, cb: () => void) {
+        return track(socketId, platform.net?.onDrain(socketId, cb))
+      },
+    }
+  }, [pid, purge])
+}
+
 // 暴露给外部插件的 SDK 表面。保持稳定，新增只增不改。
 export const TToolSDK = {
   version: SDK_VERSION,
@@ -40,7 +195,11 @@ export const TToolSDK = {
   usePersistentState,
   useToolbox,
   useNow,
-  // 平台能力（剪贴板 / 打开应用 / 翻译 等，已跨运行时降级）
+  // 数据 / 网络能力 hooks（按插件命名空间，仅桌面；web 下优雅降级）
+  useStorage,
+  useSecrets,
+  useNet,
+  // 平台能力（剪贴板 / 打开应用 / 翻译 / net / storage / secrets，已跨运行时降级）
   platform,
   // 配色
   HUE,

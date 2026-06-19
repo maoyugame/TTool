@@ -5,12 +5,14 @@ const { app, BrowserWindow, ipcMain, clipboard, shell, dialog, globalShortcut } 
 const path = require('node:path')
 const { spawn } = require('node:child_process')
 const { setupPlugins } = require('./plugins.cjs')
+const { setupHost } = require('./host/index.cjs')
 
 // 固定应用名，确保 userData（插件目录）路径稳定一致（dev 下默认会变成 "Electron"）。
 app.setName('ttool')
 
 const DEV_URL = process.env.TOOLBOX_DEV_URL
 let win = null
+let host = null // 宿主能力（net / storage / secrets），whenReady 后初始化
 
 // 翻译（主进程 fetch，免 CORS）。与 src/platform/translateApi.ts 逻辑保持一致。
 const TR_LANG = { zh: 'zh-CN', en: 'en', ja: 'ja', ko: 'ko', fr: 'fr' }
@@ -76,6 +78,9 @@ function createWindow() {
 
   // 窗口获得焦点 → 通知渲染层（用于自动聚焦搜索框）
   win.on('focus', () => win.webContents.send('ttool:window-focus'))
+
+  // 绑定宿主能力的 owner 清理（窗口销毁 / 渲染崩溃 / 整页重载时回收连接）
+  if (host) host.bindWindow(win)
 
   if (DEV_URL) {
     win.loadURL(DEV_URL)
@@ -158,6 +163,8 @@ ipcMain.handle('win:close', () => win && win.close())
 
 app.whenReady().then(() => {
   setupPlugins({ ipcMain, app, dialog, getWin: () => win })
+  // 宿主能力：通用 net（TCP/TLS）+ 按插件命名空间的 storage + safeStorage 加密 secrets
+  host = setupHost({ ipcMain, app, getWin: () => win })
   createWindow()
   // 注册全局唤醒热键 Alt+Space
   const ok = globalShortcut.register('Alt+Space', summon)
@@ -169,6 +176,7 @@ app.whenReady().then(() => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
+  if (host) host.closeAll() // 回收全部 net 连接并停掉 idle 扫描
 })
 
 app.on('window-all-closed', () => {

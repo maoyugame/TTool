@@ -44,6 +44,61 @@ export interface PluginApi {
   readBundle(id: string): Promise<string>
 }
 
+// ---- 通用网络（TCP/TLS 字节管道，仅桌面） ----
+export interface NetConnectOptions {
+  host: string
+  port: number
+  /** true=默认 TLS；对象可指定 servername / 是否校验证书（自签可设 rejectUnauthorized:false） */
+  tls?: boolean | { servername?: string; rejectUnauthorized?: boolean }
+  timeoutMs?: number
+  /** 由 SDK hook 自动注入，用于按插件计连接数 */
+  pluginId?: string
+}
+export interface NetConnectResult {
+  ok: boolean
+  socketId?: string
+  code?: string
+  error?: string
+}
+export interface NetWriteResult {
+  ok: boolean
+  /** true 表示内核写缓冲已满，应等 onDrain 再续写 */
+  backpressure?: boolean
+  code?: string
+  error?: string
+}
+export interface NetApi {
+  connect(opts: NetConnectOptions): Promise<NetConnectResult>
+  write(socketId: string, data: Uint8Array): Promise<NetWriteResult>
+  close(socketId: string): Promise<{ ok: boolean }>
+  onData(socketId: string, cb: (chunk: Uint8Array) => void): () => void
+  onClose(socketId: string, cb: (info: { hadError: boolean }) => void): () => void
+  onError(socketId: string, cb: (err: { error: string; code?: string }) => void): () => void
+  onDrain(socketId: string, cb: () => void): () => void
+}
+
+// ---- 持久化存储 / 加密凭证（按 pluginId 命名空间，仅桌面） ----
+export interface StorageResult<T = unknown> {
+  ok: boolean
+  value?: T
+  keys?: string[]
+  code?: string
+  error?: string
+}
+export interface StorageApi {
+  get<T = unknown>(pluginId: string, key: string): Promise<StorageResult<T>>
+  set(pluginId: string, key: string, value: unknown): Promise<StorageResult>
+  delete(pluginId: string, key: string): Promise<StorageResult>
+  keys(pluginId: string): Promise<StorageResult>
+}
+export interface SecretsApi {
+  available(): Promise<{ ok: boolean; available: boolean }>
+  get(pluginId: string, key: string): Promise<StorageResult<string>>
+  set(pluginId: string, key: string, value: string): Promise<StorageResult>
+  delete(pluginId: string, key: string): Promise<StorageResult>
+  keys(pluginId: string): Promise<StorageResult>
+}
+
 export interface Platform {
   /** 运行时标识 */
   readonly kind: 'web' | 'electron' | 'tauri'
@@ -81,4 +136,13 @@ export interface Platform {
 
   /** 插件管理（仅桌面；web 下为 undefined）。 */
   plugins?: PluginApi
+
+  /** 通用 TCP/TLS 字节管道（仅桌面；web 下为 undefined）。 */
+  net?: NetApi
+
+  /** 按插件命名空间的持久化 KV（仅桌面；web 下为 undefined）。 */
+  storage?: StorageApi
+
+  /** safeStorage 加密凭证存储（仅桌面；web 下为 undefined）。 */
+  secrets?: SecretsApi
 }

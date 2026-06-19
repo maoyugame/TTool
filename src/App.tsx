@@ -13,6 +13,7 @@ import { Launchpad } from './components/Launchpad'
 import { SettingsPanel } from './components/SettingsPanel'
 import { ExtensionsPanel } from './components/ExtensionsPanel'
 import { getTool } from './tools/registry'
+import { PluginContext } from './sdk'
 import type { ToolPlugin } from './tools/types'
 
 // 插件加载中占位
@@ -67,11 +68,21 @@ function Content() {
   if (view === 'home') return <Launchpad key="home" />
   const tool = getTool(view)
   if (!tool) return <Launchpad key="home" />
+  // 用 PluginContext 提供当前工具 id，作为 useStorage/useSecrets/useNet 的命名空间。
   if (tool.component) {
     const C = tool.component
-    return <C key={view} />
+    return (
+      <PluginContext.Provider value={view}>
+        <C key={view} />
+      </PluginContext.Provider>
+    )
   }
-  if (tool.load) return <LazyTool key={view} plugin={tool} />
+  if (tool.load)
+    return (
+      <PluginContext.Provider value={view}>
+        <LazyTool key={view} plugin={tool} />
+      </PluginContext.Provider>
+    )
   return <Launchpad key="home" />
 }
 

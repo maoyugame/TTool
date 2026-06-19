@@ -22,6 +22,10 @@ interface TToolBridge {
     update: (id: string) => Promise<unknown>
     readBundle: (id: string) => Promise<string>
   }
+  // 直接引用 src/platform/types 的权威类型（单一来源），任一处签名漂移会在 typecheck 暴露。
+  net: import('./platform/types').NetApi
+  storage: import('./platform/types').StorageApi
+  secrets: import('./platform/types').SecretsApi
 }
 
 interface Window {

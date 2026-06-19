@@ -94,7 +94,11 @@
 - `defineTool(spec)` / `registerTool(spec)` —— 注册工具（spec 见上方字段 + `component`）
 - UI 原语：`ToolPage` / `ToolHeader` / `Panel` / `Seg` / `ActionPill` / `ToolIcon` / `MONO` / `labelStyle`
 - hooks：`usePersistentState(key, init)`（跨标签切换保活）/ `useToolbox()`（`copy`/`flash`/`openTool`）/ `useNow()`
-- `platform`（宿主平台能力的裁剪子集）：`kind` / `isDesktop` / `copyText` / `openExternalApp` / `translate?`
+- **数据 / 网络 hooks（仅桌面，自动按插件 id 命名空间）**：
+  - `useStorage()` —— 持久化 KV（普通数据：笔记 / 配置）：`get(k,def?)` / `set(k,v)` / `remove(k)` / `keys()`
+  - `useSecrets()` —— OS 安全存储**加密**凭证（秘钥 / 密码 / 账号）：`get/set/remove/keys/available`。敏感数据必须用它，勿明文存储。
+  - `useNet()` —— 通用 TCP/TLS 字节管道（自实现任意协议）：`connect/write/close/onData/onClose/onError/onDrain`，卸载自动关闭
+- `platform`（宿主平台能力的裁剪子集）：`kind` / `isDesktop` / `copyText` / `openExternalApp` / `translate?` / `net?` / `storage?` / `secrets?`
 
 ## 约束与注意
 

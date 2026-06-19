@@ -34,4 +34,49 @@ contextBridge.exposeInMainWorld('ttool', {
     update: (id) => ipcRenderer.invoke('plugins:update', { id }),
     readBundle: (id) => ipcRenderer.invoke('plugins:readBundle', { id }),
   },
+  // 通用 TCP/TLS 字节管道（任意协议插件用；事件订阅返回取消订阅函数）
+  net: {
+    connect: (opts) => ipcRenderer.invoke('net:connect', opts),
+    write: (socketId, data) => ipcRenderer.invoke('net:write', { socketId, data }),
+    close: (socketId) => ipcRenderer.invoke('net:close', { socketId }),
+    onData: (socketId, cb) => {
+      const ch = 'net:data:' + socketId
+      const h = (_e, chunk) => cb(chunk)
+      ipcRenderer.on(ch, h)
+      return () => ipcRenderer.removeListener(ch, h)
+    },
+    onClose: (socketId, cb) => {
+      const ch = 'net:close:' + socketId
+      const h = (_e, info) => cb(info)
+      ipcRenderer.on(ch, h)
+      return () => ipcRenderer.removeListener(ch, h)
+    },
+    onError: (socketId, cb) => {
+      const ch = 'net:error:' + socketId
+      const h = (_e, err) => cb(err)
+      ipcRenderer.on(ch, h)
+      return () => ipcRenderer.removeListener(ch, h)
+    },
+    onDrain: (socketId, cb) => {
+      const ch = 'net:drain:' + socketId
+      const h = () => cb()
+      ipcRenderer.on(ch, h)
+      return () => ipcRenderer.removeListener(ch, h)
+    },
+  },
+  // 按插件命名空间的持久化 KV（普通数据）
+  storage: {
+    get: (pluginId, key) => ipcRenderer.invoke('storage:get', { pluginId, key }),
+    set: (pluginId, key, value) => ipcRenderer.invoke('storage:set', { pluginId, key, value }),
+    delete: (pluginId, key) => ipcRenderer.invoke('storage:delete', { pluginId, key }),
+    keys: (pluginId) => ipcRenderer.invoke('storage:keys', { pluginId }),
+  },
+  // safeStorage 加密 KV（秘钥 / 密码 / 账号）
+  secrets: {
+    available: () => ipcRenderer.invoke('secrets:available'),
+    get: (pluginId, key) => ipcRenderer.invoke('secrets:get', { pluginId, key }),
+    set: (pluginId, key, value) => ipcRenderer.invoke('secrets:set', { pluginId, key, value }),
+    delete: (pluginId, key) => ipcRenderer.invoke('secrets:delete', { pluginId, key }),
+    keys: (pluginId) => ipcRenderer.invoke('secrets:keys', { pluginId }),
+  },
 })

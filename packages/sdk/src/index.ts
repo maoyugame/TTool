@@ -44,13 +44,79 @@ interface SDK {
   usePersistentState<T>(key: string, initial: T): [T, (v: T | ((prev: T) => T)) => void]
   useToolbox(): { copy(text: string, label?: string): void; flash(msg: string): void; openTool(id: string): void }
   useNow(): number
+  /** 按插件命名空间的持久化 KV（普通数据：笔记 / 配置 / 收藏）。仅桌面，web 下各方法降级为 no-op/默认值。 */
+  useStorage(): StorageHook
+  /** safeStorage 加密凭证存储（秘钥 / 密码 / 账号）。仅桌面。 */
+  useSecrets(): SecretsHook
+  /** 通用 TCP/TLS 字节管道。仅桌面；卸载时自动关闭本 hook 打开的 socket。 */
+  useNet(): NetHook
   platform: {
     readonly kind: 'web' | 'electron' | 'tauri'
     readonly isDesktop: boolean
     copyText(text: string): Promise<void>
     openExternalApp(path: string): Promise<{ ok: boolean; error?: string }>
     translate?(text: string, from: string, to: string): Promise<string>
+    net?: NetApi
+    storage?: StorageApi
+    secrets?: SecretsApi
   }
+}
+
+// ---- 网络 / 存储 / 凭证：类型与 hook 形态 ----
+export interface NetConnectOptions {
+  host: string
+  port: number
+  tls?: boolean | { servername?: string; rejectUnauthorized?: boolean }
+  timeoutMs?: number
+}
+export interface NetConnectResult { ok: boolean; socketId?: string; code?: string; error?: string }
+export interface NetWriteResult { ok: boolean; backpressure?: boolean; code?: string; error?: string }
+export interface NetApi {
+  connect(opts: NetConnectOptions & { pluginId?: string }): Promise<NetConnectResult>
+  write(socketId: string, data: Uint8Array): Promise<NetWriteResult>
+  close(socketId: string): Promise<{ ok: boolean }>
+  onData(socketId: string, cb: (chunk: Uint8Array) => void): () => void
+  onClose(socketId: string, cb: (info: { hadError: boolean }) => void): () => void
+  onError(socketId: string, cb: (err: { error: string; code?: string }) => void): () => void
+  onDrain(socketId: string, cb: () => void): () => void
+}
+export interface StorageResult<T = unknown> { ok: boolean; value?: T; keys?: string[]; code?: string; error?: string }
+export interface StorageApi {
+  get<T = unknown>(pluginId: string, key: string): Promise<StorageResult<T>>
+  set(pluginId: string, key: string, value: unknown): Promise<StorageResult>
+  delete(pluginId: string, key: string): Promise<StorageResult>
+  keys(pluginId: string): Promise<StorageResult>
+}
+export interface SecretsApi {
+  available(): Promise<{ ok: boolean; available: boolean }>
+  get(pluginId: string, key: string): Promise<StorageResult<string>>
+  set(pluginId: string, key: string, value: string): Promise<StorageResult>
+  delete(pluginId: string, key: string): Promise<StorageResult>
+  keys(pluginId: string): Promise<StorageResult>
+}
+export interface StorageHook {
+  readonly available: boolean
+  get<T = unknown>(key: string, fallback?: T): Promise<T | undefined>
+  set(key: string, value: unknown): Promise<boolean>
+  remove(key: string): Promise<boolean>
+  keys(): Promise<string[]>
+}
+export interface SecretsHook {
+  available(): Promise<boolean>
+  get(key: string): Promise<string | undefined>
+  set(key: string, value: string): Promise<boolean>
+  remove(key: string): Promise<boolean>
+  keys(): Promise<string[]>
+}
+export interface NetHook {
+  readonly available: boolean
+  connect(opts: NetConnectOptions): Promise<NetConnectResult>
+  write(socketId: string, data: Uint8Array): Promise<NetWriteResult>
+  close(socketId: string): Promise<{ ok: boolean }>
+  onData(socketId: string, cb: (chunk: Uint8Array) => void): () => void
+  onClose(socketId: string, cb: (info: { hadError: boolean }) => void): () => void
+  onError(socketId: string, cb: (err: { error: string; code?: string }) => void): () => void
+  onDrain(socketId: string, cb: () => void): () => void
 }
 
 const sdk = (globalThis as unknown as { TToolSDK?: SDK }).TToolSDK
@@ -71,4 +137,7 @@ export const labelStyle = sdk.labelStyle
 export const usePersistentState = sdk.usePersistentState
 export const useToolbox = sdk.useToolbox
 export const useNow = sdk.useNow
+export const useStorage = sdk.useStorage
+export const useSecrets = sdk.useSecrets
+export const useNet = sdk.useNet
 export const platform = sdk.platform

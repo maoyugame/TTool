@@ -164,7 +164,11 @@ defineTool({ id: 'xxx', name: '我的工具', desc: '一句话描述', glyph: '�
 - **注册**：`defineTool(spec)` / `registerTool(spec)`（spec 见 ToolSpec；`component` 为工具主体组件）。
 - **UI 原语**（与平台视觉一致，强烈建议使用）：`ToolPage`（`scroll?` 可滚动/纵向填充两种布局）、`ToolHeader`、`Panel`、`Seg`（分段切换）、`ActionPill`、`ToolIcon`、`MONO`（等宽字体栈）、`labelStyle`。
 - **hooks**：`usePersistentState(key, initial)`（跨标签切换保活，**key 必须以插件 id 前缀**）、`useToolbox()` → `copy(text,label?)` / `flash(msg)` / `openTool(id)`、`useNow()`（每秒 Unix 秒）。
-- **platform**（宿主能力裁剪子集）：`kind` / `isDesktop` / `copyText` / `openExternalApp` / `translate?`。
+- **数据 / 网络 hooks（仅桌面；自动按你的插件 id 命名空间，无需自己传 id。web 端各方法优雅降级为默认值/no-op）**：
+  - `useStorage()` → `{ available, get(key, fallback?), set(key, value), remove(key), keys() }`：**持久化 KV**，存普通数据（笔记 / 配置 / 收藏）。落盘宿主 userData，按插件隔离（防键碰撞）。`set` 的 value 必须可 JSON 序列化。**普通数据用它，不要再往 localStorage 塞。**
+  - `useSecrets()` → `{ available(), get(key), set(key, value), remove(key), keys() }`：**加密凭证存储**（秘钥 / 密码 / 账号 token）。底层用 OS 安全存储（Windows DPAPI / macOS Keychain）**加密落盘**。**敏感数据一律用它，严禁明文存 localStorage / storage。** 系统不支持加密时 `available()` 返回 false。
+  - `useNet()` → `{ available, connect({host,port,tls?,timeoutMs?}), write(socketId, Uint8Array), close(socketId), onData/onClose/onError/onDrain(socketId, cb)→取消订阅 }`：**通用 TCP/TLS 字节管道**，用于自实现任意 TCP 协议（数据库 / 自定义协议客户端等）。组件卸载时本 hook 打开的 socket 自动关闭。`write` 返回 `{ok,backpressure}`，`backpressure` 为真时应等 `onDrain` 再续写。
+- **platform**（宿主能力裁剪子集）：`kind` / `isDesktop` / `copyText` / `openExternalApp` / `translate?` / `net?` / `storage?` / `secrets?`（后三者为上述 hooks 的底层 API，一般直接用 hooks 即可）。
 
 配色与排版**一律用 CSS 变量**（自动适配深/浅色）：`var(--text)` / `var(--text2)` / `var(--text3)` / `var(--surface)` / `var(--surface2)` / `var(--hair)` / `var(--hair2)` / `var(--field)` / `var(--fieldHair)` / `var(--accent)` / `var(--accentSoft)` / `var(--good)` / `var(--pill)`。
 
@@ -211,6 +215,7 @@ defineTool({ id: 'xxx', name: '我的工具', desc: '一句话描述', glyph: '�
 8. **受信任模型**：插件以宿主同等权限运行（桌面端）。请勿编写恶意/越权代码；用户安装的是其信任的仓库。
 9. **入口文件名固定 `tool.js`**，`manifest.entry` 与之一致；`entry`/`icon` 不得用 `..` 逃出插件目录（宿主会拒绝）。
 10. **不在顶层执行有副作用的初始化**（全局监听/计时器等）：插件可能被多次加载，副作用应放进组件生命周期内并自行清理。
+11. **敏感数据必须用 `useSecrets()`**（加密落盘），**严禁**把秘钥 / 密码 / 账号 token 明文写进 `localStorage` 或 `useStorage()`（后者明文落盘）。普通数据用 `useStorage()` 而非自行操作 `localStorage`，以获得按插件命名空间与统一管理。
 
 ---
 
@@ -272,6 +277,33 @@ declare module '@maoyugames/ttool-sdk' {
   export function usePersistentState<T>(key: string, initial: T): [T, (v: T | ((prev: T) => T)) => void]
   export function useToolbox(): { copy(text: string, label?: string): void; flash(msg: string): void; openTool(id: string): void }
   export function useNow(): number
+  export interface NetConnectOptions { host: string; port: number; tls?: boolean | { servername?: string; rejectUnauthorized?: boolean }; timeoutMs?: number }
+  export interface NetConnectResult { ok: boolean; socketId?: string; code?: string; error?: string }
+  export interface NetWriteResult { ok: boolean; backpressure?: boolean; code?: string; error?: string }
+  export function useStorage(): {
+    readonly available: boolean
+    get<T = unknown>(key: string, fallback?: T): Promise<T | undefined>
+    set(key: string, value: unknown): Promise<boolean>
+    remove(key: string): Promise<boolean>
+    keys(): Promise<string[]>
+  }
+  export function useSecrets(): {
+    available(): Promise<boolean>
+    get(key: string): Promise<string | undefined>
+    set(key: string, value: string): Promise<boolean>
+    remove(key: string): Promise<boolean>
+    keys(): Promise<string[]>
+  }
+  export function useNet(): {
+    readonly available: boolean
+    connect(opts: NetConnectOptions): Promise<NetConnectResult>
+    write(socketId: string, data: Uint8Array): Promise<NetWriteResult>
+    close(socketId: string): Promise<{ ok: boolean }>
+    onData(socketId: string, cb: (chunk: Uint8Array) => void): () => void
+    onClose(socketId: string, cb: (info: { hadError: boolean }) => void): () => void
+    onError(socketId: string, cb: (err: { error: string; code?: string }) => void): () => void
+    onDrain(socketId: string, cb: () => void): () => void
+  }
   export const platform: {
     readonly kind: 'web' | 'electron' | 'tauri'
     readonly isDesktop: boolean
