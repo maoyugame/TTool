@@ -7,7 +7,7 @@
 >
 > 适用 SDK 版本：**v1**（`manifest.sdk="1"` 不变）。整套为 **additive**。本稿已折入设计评审确认的 20 项改进（标 ✅REV-n）。
 >
-> **实现进度**：net + storage + secrets 已实现并端到端验证（见 `electron/host/`、SDK `useNet/useStorage/useSecrets`）。db 适配器（mysql/redis/mongo）按本规范 §10 顺序后续实现，复用同一 envelope（`electron/host/registry.cjs`）。
+> **实现进度（全部已落地并端到端验证）**：net + storage + secrets（SDK `useNet/useStorage/useSecrets`，1.2.0）+ **db 适配器 mysql/redis/mongo**（`electron/host/{mysql,redis,mongo}.cjs` + dbutil，`platform.db` 已接通，SDK `useMySQL/useRedis/useMongo`，1.3.0）。db 适配器已用真实 docker(MySQL 8 / Redis 7 / Mongo 7)通过 §11 验收：类型保真、二进制、EJSON、错误码、连接生命周期均验证。全部复用同一 envelope（`registry.cjs`）。
 
 ---
 
@@ -115,7 +115,7 @@ onData(socketId, cb)/onClose(socketId, cb)/onError(socketId, cb)/onDrain(socketI
 | `DATE/DATETIME/TIMESTAMP/TIME` | **字符串** | `dateStrings:true`；connect 固定 `timezone:'Z'` |
 | `JSON` | **原始字符串** | 关闭 mysql2 默认 `JSON.parse`，避免格式/键序/大整数失真 |
 | `BIT` | **字符串** | 不落成 Buffer |
-| `GEOMETRY/POINT…` | **WKT 字符串** | 固定形态写进规范 |
+| `GEOMETRY/POINT…` | **mysql2 解析的几何对象** | 固定形态（`field.geometry()`，结构化可克隆，如点 `{x,y}`）；非 WKT |
 | `SET`/`ENUM` | 字符串 | |
 | `TINYINT(1)` | **number(0/1)** | 不擅自转 boolean |
 | `BLOB/BINARY/VARBINARY` | `Uint8Array` | 单值受 §2.5 上限 |
@@ -154,7 +154,8 @@ listIndexes / createIndex → {ok, name:string}（透传索引名） / dropIndex
 runCommand(connId, db, command)           // 逃生口
 close(connId) / ping(connId)              // ping 走 admin().ping()
 ```
-- **EJSON 保真边界（不夸大）**：`ObjectId/Date/Long/Decimal128/Binary/Timestamp/RegExp` canonical 无损；**需注意**：`double` 的 `NaN/Infinity/-0`、`undefined`、`Code-with-scope`、`Binary subType`（UUID=subtype4）等易失真，§6 列出白名单。
+- **EJSON 保真边界（不夸大）**：`ObjectId/Date/Long/Decimal128/Binary/Timestamp/RegExp` canonical 无损；**需注意**：`double` 的 `NaN/Infinity/-0`、`undefined`、`Code-with-scope`、`Binary subType`（UUID=subtype4）等易失真。
+- **入参数值类型**：数据入参用 `EJSON.deserialize(relaxed:false)`（保 `{$numberLong}`→Long 精度）。副作用：**裸 JS 大整数（>int32，如 3000000000）会被存为 Long 而非 Double**——若需 Double 请显式用 `{$numberDouble}`；显式 `{$numberInt}`/`{$numberLong}`/`{$numberDouble}` 始终按标签精确还原。**选项入参**（`maxTimeMS`/`batchSize`/`upsert`/`collation` 等）用 `relaxed:true`，避免数值塌成 BSON 包装对象导致驱动 `typeof===number` 守卫失效（如 `maxTimeMS` 被静默丢弃）。
 - `find`/`aggregate` 受 §2.5 字节封顶。
 
 ---
@@ -186,7 +187,7 @@ close(connId) / ping(connId)              // ping 走 admin().ping()
 | `src/platform/types.ts` / `electron.ts` / `vite-env.d.ts` | 类型 + 适配 | ✅ |
 | `src/sdk/index.ts` / `App.tsx` / `packages/sdk` | PluginContext + net/storage/secrets hooks，bump 1.2.0 | ✅ |
 | `src/platform/types.ts` / `packages/sdk` / `src/sdk` | **db 契约**(DbApi/MySQLApi/RedisApi/MongoApi + Platform.db?) + `useMySQL/useRedis/useMongo`，bump 1.3.0 | ✅ 契约先行 |
-| `electron/host/mysql.cjs` / `redis.cjs` / `mongo.cjs` + preload/electron 接 `platform.db` | 三 DB 适配器 + `db:*` IPC 接线 | ⬜ 后续（运行时） |
+| `electron/host/dbutil.cjs` + `mysql.cjs` / `redis.cjs` / `mongo.cjs` + preload/electron 接 `platform.db` | 三 DB 适配器 + `db:*` IPC 接线（真实 docker §11 验收通过） | ✅ |
 
 ---
 
@@ -194,7 +195,7 @@ close(connId) / ping(connId)              // ping 走 admin().ping()
 
 全 **additive**：`platform.net?`/`storage?`/`secrets?`/`db?` 新增，既有插件零影响，`manifest.sdk` 仍 `"1"`。
 - net/storage/secrets 表面 → **已发布 `@maoyugames/ttool-sdk` 1.2.0**。
-- db 的 SDK 契约（`platform.db.{mysql,redis,mongo}` + `useMySQL/useRedis/useMongo`）→ **已发布 1.3.0（契约先行）**：插件可即按契约开发；**运行时需宿主适配器**（`electron/host/{mysql,redis,mongo}.cjs` + preload/electron 接线，本仓后续实现），未接入前 `platform.db` 为 undefined、hooks 降级（`available=false` / 返回 `NO_DB`）。
+- db 的 SDK 契约（`platform.db.{mysql,redis,mongo}` + `useMySQL/useRedis/useMongo`）→ **已发布 1.3.0**；宿主适配器（`electron/host/{mysql,redis,mongo}.cjs`）**已实现并接通 `platform.db`**，桌面端可直接连库运行。web 下 `platform.db` 仍为 undefined（hooks 降级）。
 - 后续 db 适配器落地仅为「接通运行时」，不改既有 SDK 签名；新协议走 net 无需改 SDK。
 
 ---
@@ -202,8 +203,8 @@ close(connId) / ping(connId)              // ping 走 admin().ping()
 ## 11. 实施顺序
 
 1. ✅ **共享 envelope + `net.cjs` + storage/secrets** —— 底座先行。
-2. ⬜ **MySQL 适配器**（typeCast 矩阵）—— 与现有 MySQL 插件联调。
-3. ⬜ **Redis 适配器**（RESP2 + callBuffer 二进制）。
-4. ⬜ **MongoDB 适配器**（EJSON）。
+2. ✅ **MySQL 适配器**（typeCast 矩阵）。
+3. ✅ **Redis 适配器**（RESP2 + callBuffer 二进制）。
+4. ✅ **MongoDB 适配器**（EJSON，relaxed:false 保精度）。
 5. 每步：补 platform/preload/SDK 类型（SDK 为唯一来源）→ 重建 → 真连库验收 → 同步插件指南 → bump SDK 版本发布。
 6. 新增数据库（PG/SQLite/MSSQL…）按同模式加 `db.<kind>.*`；冷门协议直接用 `net`，零 SDK 改动。

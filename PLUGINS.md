@@ -98,7 +98,7 @@
   - `useStorage()` —— 持久化 KV（普通数据：笔记 / 配置）：`get(k,def?)` / `set(k,v)` / `remove(k)` / `keys()`
   - `useSecrets()` —— OS 安全存储**加密**凭证（秘钥 / 密码 / 账号）：`get/set/remove/keys/available`。敏感数据必须用它，勿明文存储。
   - `useNet()` —— 通用 TCP/TLS 字节管道（自实现任意协议）：`connect/write/close/onData/onClose/onError/onDrain`，卸载自动关闭
-- **数据库便利层 hooks（自 SDK 1.3.0；卸载自动关闭连接）**：`useMySQL()` / `useRedis()`（RESP2）/ `useMongo()`（EJSON）——`connect(config)` 拿 `connId`，再 `query/command/find/...`。**运行时需宿主已实现对应适配器（规划中）**，未接入前 `available=false`、调用返回 `NO_DB`，务必先判 `available`。语义见 `HOST-DB-SPEC.md`。
+- **数据库便利层 hooks（自 SDK 1.3.0；卸载自动关闭连接）**：`useMySQL()` / `useRedis()`（RESP2）/ `useMongo()`（EJSON）——`connect(config)` 拿 `connId`，再 `query/command/find/...`。**桌面端已实现并经真实数据库验收**；web 下 `available=false`、调用返回 `NO_DB`，务必先判 `available`。语义见 `HOST-DB-SPEC.md`。
 - `platform`（宿主平台能力的裁剪子集）：`kind` / `isDesktop` / `copyText` / `openExternalApp` / `translate?` / `net?` / `storage?` / `secrets?` / `db?`
 
 ## 约束与注意

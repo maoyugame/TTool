@@ -23,6 +23,17 @@ function setupHost({ ipcMain, app, getWin }) {
   setupStorage({ ipcMain, app })
   setupSecrets({ ipcMain, app })
 
+  // DB 适配器：复用同一 registry（连接预占 / 忙碌 / owner 清理 / 上限）。
+  // 某驱动 require 失败则跳过其挂载，其余正常。
+  for (const [name, mod] of [['mysql', './mysql.cjs'], ['redis', './redis.cjs'], ['mongo', './mongo.cjs']]) {
+    try {
+      const setup = require(mod)[`setup${name[0].toUpperCase()}${name.slice(1)}`]
+      setup({ ipcMain, registry })
+    } catch (err) {
+      console.warn(`[ttool] DB 适配器 ${name} 未挂载：`, err && err.message ? err.message : err)
+    }
+  }
+
   const bound = new WeakSet()
   function bindWindow(win) {
     if (!win || bound.has(win)) return

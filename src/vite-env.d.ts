@@ -26,6 +26,7 @@ interface TToolBridge {
   net: import('./platform/types').NetApi
   storage: import('./platform/types').StorageApi
   secrets: import('./platform/types').SecretsApi
+  db: import('./platform/types').DbApi
 }
 
 interface Window {
