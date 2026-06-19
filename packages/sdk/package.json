@@ -1,5 +1,5 @@
 {
-  "name": "@ttool/sdk",
+  "name": "@maoyugame/ttool-sdk",
   "version": "1.0.0",
   "description": "TTool 平台 · 工具插件开发 SDK（类型 + 运行时桥接到宿主单例）",
   "type": "module",

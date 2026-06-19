@@ -8,7 +8,7 @@
 TTool 是跨平台桌面**多功能工具平台 + 可插拔工具插件系统**。
 - 技术栈：Vite + React 18 + TypeScript（核心）+ Electron（桌面壳）。
 - 两种工具：**内置工具**（编译期，随宿主打包，见 `TOOLS.md`）与**外部插件**（运行期，独立项目独立构建、从 GitHub/本地动态安装，见 `PLUGINS.md`）。
-- 品牌命名：产品/应用 **TTool**；SDK 包 `@ttool/sdk`；运行时全局 `TToolSDK`；预加载桥 `window.ttool`；应用名/存储前缀 `ttool`。内部 React 名（`useToolbox`/`ToolboxProvider` 等）保持不变，不属品牌面。
+- 品牌命名：产品/应用 **TTool**；SDK 包 `@maoyugame/ttool-sdk`；运行时全局 `TToolSDK`；预加载桥 `window.ttool`；应用名/存储前缀 `ttool`。内部 React 名（`useToolbox`/`ToolboxProvider` 等）保持不变，不属品牌面。
 
 ## 目录速览
 
@@ -19,7 +19,7 @@ src/                核心应用（外壳/启动台/工具/store/平台适配/�
   plugins/          外部插件渲染层加载器（懒加载）
   platform/         平台适配层（web/electron，tauri 可扩展）+ shortcuts
 electron/           主进程 main.cjs + preload.cjs + plugins.cjs（插件管理器）
-packages/sdk/       @ttool/sdk 包（类型 + 运行时桥接）
+packages/sdk/       @maoyugame/ttool-sdk 包（类型 + 运行时桥接）
 examples/hello-tool 示例外部插件（脚手架参考实现）
 scripts/            ssr-smoke / capture / seed-plugin（验证用）
 TTOOL-PLUGIN-GUIDE.md  ★ 给 AI 的插件脚手架文档（放入插件项目即可让 AI 据此创建）
@@ -46,7 +46,7 @@ TOOLS.md / PLUGINS.md / README.md
 
 3. 路径安全等加固（`safeId`/`safeJoin`/导航拦截）是底线，改动插件加载相关代码时不得削弱。
 
-4. **`@ttool/sdk` 发布在 npm 公共 registry**（源码 `packages/sdk/`，`prepublishOnly` 编译 dist）。SDK 表面变更后：bump `packages/sdk/package.json` 版本（破坏性变更同时 bump `SDK_VERSION` 主版本）→ `cd packages/sdk && npm publish --access public`（需维护者 npm 账号）→ 同步 `TTOOL-PLUGIN-GUIDE.md`。`packages/sdk/src/index.ts` 的类型必须与指南 §4 及 §11 兜底 shim 三处一致。
+4. **`@maoyugame/ttool-sdk` 发布在 npm 公共 registry**（源码 `packages/sdk/`，`prepublishOnly` 编译 dist）。SDK 表面变更后：bump `packages/sdk/package.json` 版本（破坏性变更同时 bump `SDK_VERSION` 主版本）→ `cd packages/sdk && npm publish --access public`（需维护者 npm 账号）→ 同步 `TTOOL-PLUGIN-GUIDE.md`。`packages/sdk/src/index.ts` 的类型必须与指南 §4 及 §11 兜底 shim 三处一致。
 
 ## 文档职责
 
