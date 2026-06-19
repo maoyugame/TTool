@@ -17,6 +17,7 @@ import { usePersistentState } from '../store/persistentState'
 import { useToolbox } from '../store/toolbox'
 import { useNow } from '../store/useNow'
 import { platform } from '../platform'
+import type { MySQLConnectConfig, RedisConnectConfig, MongoConnectConfig } from '../platform/types'
 
 // SDK 版本：与插件 manifest.sdk 做兼容校验用（主版本）。
 export const SDK_VERSION = '1'
@@ -176,6 +177,113 @@ export function useNet() {
   }, [pid, purge])
 }
 
+// ---- 数据库便利层 hooks（自 SDK 1.3.0）----
+// 契约先行：运行时需宿主已实现对应 DB 适配器（electron/host/{mysql,redis,mongo}.cjs，规划中）。
+// 未接入时 platform.db 为 undefined → available=false、connect/close 返回 NO_DB（插件应先判 available）。
+const NODB = { ok: false as const, code: 'NO_DB' as const, error: '当前运行时不支持数据库能力（仅桌面版，且需宿主已实现对应适配器）' }
+
+// 通用：connect 注入 pluginId、跟踪 connId、组件卸载时自动关闭本 hook 打开的连接。
+function useDbConns() {
+  const opened = React.useRef<Set<string>>(new Set())
+  return opened
+}
+
+export function useMySQL() {
+  const pid = usePluginId()
+  const opened = useDbConns()
+  React.useEffect(
+    () => () => {
+      const a = platform.db?.mysql
+      if (a) for (const id of opened.current) a.close(id)
+      opened.current.clear()
+    },
+    [opened]
+  )
+  return React.useMemo(() => {
+    const a = platform.db?.mysql
+    const base = {
+      get available() {
+        return !!a
+      },
+      async connect(config: MySQLConnectConfig) {
+        if (!a) return NODB
+        const r = await a.connect({ ...config, pluginId: pid })
+        if (r && r.ok && r.connId) opened.current.add(r.connId)
+        return r
+      },
+      close(connId: string) {
+        opened.current.delete(connId)
+        return a ? a.close(connId) : Promise.resolve(NODB)
+      },
+    }
+    return a ? { ...a, ...base } : base
+  }, [pid, opened])
+}
+
+export function useRedis() {
+  const pid = usePluginId()
+  const opened = useDbConns()
+  React.useEffect(
+    () => () => {
+      const a = platform.db?.redis
+      if (a) for (const id of opened.current) a.close(id)
+      opened.current.clear()
+    },
+    [opened]
+  )
+  return React.useMemo(() => {
+    const a = platform.db?.redis
+    const base = {
+      get available() {
+        return !!a
+      },
+      async connect(config: RedisConnectConfig) {
+        if (!a) return NODB
+        const r = await a.connect({ ...config, pluginId: pid })
+        if (r && r.ok && r.connId) opened.current.add(r.connId)
+        return r
+      },
+      close(connId: string) {
+        opened.current.delete(connId)
+        return a ? a.close(connId) : Promise.resolve(NODB)
+      },
+    }
+    return a ? { ...a, ...base } : base
+  }, [pid, opened])
+}
+
+export function useMongo() {
+  const pid = usePluginId()
+  const opened = useDbConns()
+  React.useEffect(
+    () => () => {
+      const a = platform.db?.mongo
+      if (a) for (const id of opened.current) a.close(id)
+      opened.current.clear()
+    },
+    [opened]
+  )
+  return React.useMemo(() => {
+    const a = platform.db?.mongo
+    const base = {
+      get available() {
+        return !!a
+      },
+      async connect(config: MongoConnectConfig) {
+        if (!a) return NODB
+        const r = await a.connect({ ...config, pluginId: pid })
+        if (r && r.ok && r.connId) opened.current.add(r.connId)
+        return r
+      },
+      close(connId: string) {
+        opened.current.delete(connId)
+        return a ? a.close(connId) : Promise.resolve(NODB)
+      },
+    }
+    return a ? { ...a, ...base } : base
+  }, [pid, opened])
+}
+
 // 暴露给外部插件的 SDK 表面。保持稳定，新增只增不改。
 export const TToolSDK = {
   version: SDK_VERSION,
@@ -199,6 +307,10 @@ export const TToolSDK = {
   useStorage,
   useSecrets,
   useNet,
+  // 数据库便利层 hooks（自 1.3.0；运行时需宿主适配器，未接入时降级）
+  useMySQL,
+  useRedis,
+  useMongo,
   // 平台能力（剪贴板 / 打开应用 / 翻译 / net / storage / secrets，已跨运行时降级）
   platform,
   // 配色

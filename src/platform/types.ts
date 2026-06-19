@@ -99,6 +99,88 @@ export interface SecretsApi {
   keys(pluginId: string): Promise<StorageResult>
 }
 
+// ---- 数据库便利层（platform.db，仅桌面；契约自 SDK 1.3.0 起提供）----
+// 注意：运行时需宿主已实现对应 DB 适配器（electron/host/{mysql,redis,mongo}.cjs，规划中）。
+// 未接入前 platform.db 为 undefined，SDK 的 db hooks 降级（available=false / 调用返回 NO_DB）。
+// 详尽语义（类型映射 / 错误码 / 序列化 / 体量封顶）见 HOST-DB-SPEC.md。
+export type DbCode =
+  | 'AUTH_FAILED' | 'CONN_REFUSED' | 'TIMEOUT' | 'DNS_FAIL' | 'TLS_FAIL'
+  | 'NO_CONN' | 'STALE_CONN' | 'TOO_MANY_CONNS' | 'BAD_ARGS'
+  | 'DUP_KEY' | 'SYNTAX_ERR' | 'EJSON_INVALID' | 'RESULT_TRUNCATED'
+  | 'NO_DB' | 'UNKNOWN'
+
+/** 建连结果：成功返回不透明 connId（+ 可选 serverVersion）。 */
+export interface DbConnectResult { ok: boolean; connId?: string; serverVersion?: string; code?: DbCode; error?: string }
+/** 简单结果（close / ping / dropIndex 等）。 */
+export interface DbSimpleResult { ok: boolean; code?: DbCode; error?: string }
+
+// MySQL（mysql2；类型经 typeCast 矩阵归一化，大整数/DECIMAL/DATE/JSON 等以字符串保真）
+export interface MySQLConnectConfig { host: string; port?: number; user?: string; password?: string; database?: string; ssl?: boolean | { rejectUnauthorized?: boolean }; connectTimeoutMs?: number; pluginId?: string }
+export interface MySQLField { name: string; type?: string }
+export interface MySQLQueryResult {
+  ok: boolean
+  durationMs?: number
+  result?: { kind: 'rows' | 'ok'; rows?: Record<string, unknown>[]; fields?: MySQLField[]; affectedRows?: number; insertId?: string; changedRows?: number; truncated?: boolean }
+  code?: DbCode; error?: string; driverCode?: string; errno?: number
+}
+export interface MySQLApi {
+  connect(config: MySQLConnectConfig): Promise<DbConnectResult>
+  /** 一次一条语句；params 走 ? 参数化防注入。 */
+  query(connId: string, sql: string, params?: unknown[]): Promise<MySQLQueryResult>
+  close(connId: string): Promise<DbSimpleResult>
+  ping(connId: string): Promise<DbSimpleResult>
+}
+
+// Redis（ioredis，RESP2；二进制值用 opts.binary 走 callBuffer 返回 Uint8Array）
+export type RedisReply = string | number | null | Uint8Array | RedisReply[] | { _t: 'error'; message: string }
+export interface RedisConnectConfig { host: string; port?: number; username?: string; password?: string; db?: number; tls?: boolean | { rejectUnauthorized?: boolean }; connectTimeoutMs?: number; pluginId?: string }
+export interface RedisCommandResult { ok: boolean; durationMs?: number; reply?: RedisReply; code?: DbCode; error?: string; driverCode?: string }
+export interface RedisCommandSpec { args: (string | number | Uint8Array)[]; binary?: boolean }
+export interface RedisPipelineResult { ok: boolean; durationMs?: number; replies?: RedisReply[]; code?: DbCode; error?: string }
+export interface RedisApi {
+  connect(config: RedisConnectConfig): Promise<DbConnectResult>
+  /** args[0] 为命令名；opts.binary=true 时回复按二进制（Uint8Array）返回，避免 UTF-8 破坏。 */
+  command(connId: string, args: (string | number | Uint8Array)[], opts?: { binary?: boolean }): Promise<RedisCommandResult>
+  pipeline(connId: string, cmds: RedisCommandSpec[]): Promise<RedisPipelineResult>
+  close(connId: string): Promise<DbSimpleResult>
+  ping(connId: string): Promise<DbSimpleResult>
+}
+
+// MongoDB（mongodb v6；值用 Extended JSON canonical 的 plain object 表示，如 {$oid}/{$date}）
+export type EJSON = unknown
+export interface MongoConnectConfig { uri?: string; host?: string; port?: number; user?: string; password?: string; authSource?: string; tls?: boolean; replicaSet?: string; connectTimeoutMs?: number; pluginId?: string }
+export interface MongoFindOptions { filter?: EJSON; projection?: EJSON; sort?: EJSON; limit?: number; skip?: number }
+export interface MongoDocsResult { ok: boolean; durationMs?: number; docs?: EJSON[]; truncated?: boolean; code?: DbCode; error?: string }
+export interface MongoCountResult { ok: boolean; durationMs?: number; count?: number; code?: DbCode; error?: string }
+export interface MongoNamesResult { ok: boolean; durationMs?: number; names?: string[]; code?: DbCode; error?: string }
+export interface MongoWriteResult { ok: boolean; durationMs?: number; insertedId?: EJSON; insertedIds?: EJSON[]; matchedCount?: number; modifiedCount?: number; upsertedId?: EJSON; deletedCount?: number; code?: DbCode; error?: string }
+export interface MongoIndexResult { ok: boolean; name?: string; code?: DbCode; error?: string }
+export interface MongoRunCommandResult { ok: boolean; durationMs?: number; result?: EJSON; code?: DbCode; error?: string }
+export interface MongoApi {
+  connect(config: MongoConnectConfig): Promise<DbConnectResult>
+  listDatabases(connId: string): Promise<MongoNamesResult>
+  listCollections(connId: string, db: string): Promise<MongoNamesResult>
+  find(connId: string, db: string, coll: string, opts?: MongoFindOptions): Promise<MongoDocsResult>
+  countDocuments(connId: string, db: string, coll: string, filter?: EJSON): Promise<MongoCountResult>
+  aggregate(connId: string, db: string, coll: string, pipeline: EJSON[], opts?: EJSON): Promise<MongoDocsResult>
+  distinct(connId: string, db: string, coll: string, field: string, filter?: EJSON, options?: EJSON): Promise<MongoDocsResult>
+  insertOne(connId: string, db: string, coll: string, doc: EJSON): Promise<MongoWriteResult>
+  insertMany(connId: string, db: string, coll: string, docs: EJSON[]): Promise<MongoWriteResult>
+  updateOne(connId: string, db: string, coll: string, filter: EJSON, update: EJSON, opts?: EJSON): Promise<MongoWriteResult>
+  updateMany(connId: string, db: string, coll: string, filter: EJSON, update: EJSON, opts?: EJSON): Promise<MongoWriteResult>
+  replaceOne(connId: string, db: string, coll: string, filter: EJSON, replacement: EJSON, opts?: EJSON): Promise<MongoWriteResult>
+  deleteOne(connId: string, db: string, coll: string, filter: EJSON): Promise<MongoWriteResult>
+  deleteMany(connId: string, db: string, coll: string, filter: EJSON): Promise<MongoWriteResult>
+  listIndexes(connId: string, db: string, coll: string): Promise<MongoDocsResult>
+  createIndex(connId: string, db: string, coll: string, keys: EJSON, opts?: EJSON): Promise<MongoIndexResult>
+  dropIndex(connId: string, db: string, coll: string, name: string): Promise<DbSimpleResult>
+  runCommand(connId: string, db: string, command: EJSON): Promise<MongoRunCommandResult>
+  close(connId: string): Promise<DbSimpleResult>
+  ping(connId: string): Promise<DbSimpleResult>
+}
+
+export interface DbApi { mysql?: MySQLApi; redis?: RedisApi; mongo?: MongoApi }
+
 export interface Platform {
   /** 运行时标识 */
   readonly kind: 'web' | 'electron' | 'tauri'
@@ -145,4 +227,7 @@ export interface Platform {
 
   /** safeStorage 加密凭证存储（仅桌面；web 下为 undefined）。 */
   secrets?: SecretsApi
+
+  /** 数据库便利层（仅桌面，且需宿主已实现对应适配器；未接入时为 undefined）。 */
+  db?: DbApi
 }

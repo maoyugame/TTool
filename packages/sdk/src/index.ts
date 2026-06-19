@@ -50,6 +50,12 @@ interface SDK {
   useSecrets(): SecretsHook
   /** 通用 TCP/TLS 字节管道。仅桌面；卸载时自动关闭本 hook 打开的 socket。 */
   useNet(): NetHook
+  /** MySQL 便利层（自 1.3.0）。运行时需宿主已实现适配器，未接入时 available=false、调用返回 NO_DB。 */
+  useMySQL(): MySQLHook
+  /** Redis 便利层（自 1.3.0，RESP2）。 */
+  useRedis(): RedisHook
+  /** MongoDB 便利层（自 1.3.0，EJSON）。 */
+  useMongo(): MongoHook
   platform: {
     readonly kind: 'web' | 'electron' | 'tauri'
     readonly isDesktop: boolean
@@ -59,6 +65,7 @@ interface SDK {
     net?: NetApi
     storage?: StorageApi
     secrets?: SecretsApi
+    db?: DbApi
   }
 }
 
@@ -119,6 +126,81 @@ export interface NetHook {
   onDrain(socketId: string, cb: () => void): () => void
 }
 
+// ---- 数据库便利层（自 1.3.0；运行时需宿主已实现对应适配器，未接入时降级 NO_DB）----
+// 详尽语义见仓库 HOST-DB-SPEC.md。hook 的 connect 会自动注入 pluginId，插件无需传。
+export type DbCode =
+  | 'AUTH_FAILED' | 'CONN_REFUSED' | 'TIMEOUT' | 'DNS_FAIL' | 'TLS_FAIL'
+  | 'NO_CONN' | 'STALE_CONN' | 'TOO_MANY_CONNS' | 'BAD_ARGS'
+  | 'DUP_KEY' | 'SYNTAX_ERR' | 'EJSON_INVALID' | 'RESULT_TRUNCATED'
+  | 'NO_DB' | 'UNKNOWN'
+export interface DbConnectResult { ok: boolean; connId?: string; serverVersion?: string; code?: DbCode; error?: string }
+export interface DbSimpleResult { ok: boolean; code?: DbCode; error?: string }
+
+export interface MySQLConnectConfig { host: string; port?: number; user?: string; password?: string; database?: string; ssl?: boolean | { rejectUnauthorized?: boolean }; connectTimeoutMs?: number; pluginId?: string }
+export interface MySQLField { name: string; type?: string }
+export interface MySQLQueryResult {
+  ok: boolean
+  durationMs?: number
+  result?: { kind: 'rows' | 'ok'; rows?: Record<string, unknown>[]; fields?: MySQLField[]; affectedRows?: number; insertId?: string; changedRows?: number; truncated?: boolean }
+  code?: DbCode; error?: string; driverCode?: string; errno?: number
+}
+export interface MySQLApi {
+  connect(config: MySQLConnectConfig): Promise<DbConnectResult>
+  query(connId: string, sql: string, params?: unknown[]): Promise<MySQLQueryResult>
+  close(connId: string): Promise<DbSimpleResult>
+  ping(connId: string): Promise<DbSimpleResult>
+}
+export interface MySQLHook extends MySQLApi { readonly available: boolean }
+
+export type RedisReply = string | number | null | Uint8Array | RedisReply[] | { _t: 'error'; message: string }
+export interface RedisConnectConfig { host: string; port?: number; username?: string; password?: string; db?: number; tls?: boolean | { rejectUnauthorized?: boolean }; connectTimeoutMs?: number; pluginId?: string }
+export interface RedisCommandResult { ok: boolean; durationMs?: number; reply?: RedisReply; code?: DbCode; error?: string; driverCode?: string }
+export interface RedisCommandSpec { args: (string | number | Uint8Array)[]; binary?: boolean }
+export interface RedisPipelineResult { ok: boolean; durationMs?: number; replies?: RedisReply[]; code?: DbCode; error?: string }
+export interface RedisApi {
+  connect(config: RedisConnectConfig): Promise<DbConnectResult>
+  command(connId: string, args: (string | number | Uint8Array)[], opts?: { binary?: boolean }): Promise<RedisCommandResult>
+  pipeline(connId: string, cmds: RedisCommandSpec[]): Promise<RedisPipelineResult>
+  close(connId: string): Promise<DbSimpleResult>
+  ping(connId: string): Promise<DbSimpleResult>
+}
+export interface RedisHook extends RedisApi { readonly available: boolean }
+
+export type EJSON = unknown
+export interface MongoConnectConfig { uri?: string; host?: string; port?: number; user?: string; password?: string; authSource?: string; tls?: boolean; replicaSet?: string; connectTimeoutMs?: number; pluginId?: string }
+export interface MongoFindOptions { filter?: EJSON; projection?: EJSON; sort?: EJSON; limit?: number; skip?: number }
+export interface MongoDocsResult { ok: boolean; durationMs?: number; docs?: EJSON[]; truncated?: boolean; code?: DbCode; error?: string }
+export interface MongoCountResult { ok: boolean; durationMs?: number; count?: number; code?: DbCode; error?: string }
+export interface MongoNamesResult { ok: boolean; durationMs?: number; names?: string[]; code?: DbCode; error?: string }
+export interface MongoWriteResult { ok: boolean; durationMs?: number; insertedId?: EJSON; insertedIds?: EJSON[]; matchedCount?: number; modifiedCount?: number; upsertedId?: EJSON; deletedCount?: number; code?: DbCode; error?: string }
+export interface MongoIndexResult { ok: boolean; name?: string; code?: DbCode; error?: string }
+export interface MongoRunCommandResult { ok: boolean; durationMs?: number; result?: EJSON; code?: DbCode; error?: string }
+export interface MongoApi {
+  connect(config: MongoConnectConfig): Promise<DbConnectResult>
+  listDatabases(connId: string): Promise<MongoNamesResult>
+  listCollections(connId: string, db: string): Promise<MongoNamesResult>
+  find(connId: string, db: string, coll: string, opts?: MongoFindOptions): Promise<MongoDocsResult>
+  countDocuments(connId: string, db: string, coll: string, filter?: EJSON): Promise<MongoCountResult>
+  aggregate(connId: string, db: string, coll: string, pipeline: EJSON[], opts?: EJSON): Promise<MongoDocsResult>
+  distinct(connId: string, db: string, coll: string, field: string, filter?: EJSON, options?: EJSON): Promise<MongoDocsResult>
+  insertOne(connId: string, db: string, coll: string, doc: EJSON): Promise<MongoWriteResult>
+  insertMany(connId: string, db: string, coll: string, docs: EJSON[]): Promise<MongoWriteResult>
+  updateOne(connId: string, db: string, coll: string, filter: EJSON, update: EJSON, opts?: EJSON): Promise<MongoWriteResult>
+  updateMany(connId: string, db: string, coll: string, filter: EJSON, update: EJSON, opts?: EJSON): Promise<MongoWriteResult>
+  replaceOne(connId: string, db: string, coll: string, filter: EJSON, replacement: EJSON, opts?: EJSON): Promise<MongoWriteResult>
+  deleteOne(connId: string, db: string, coll: string, filter: EJSON): Promise<MongoWriteResult>
+  deleteMany(connId: string, db: string, coll: string, filter: EJSON): Promise<MongoWriteResult>
+  listIndexes(connId: string, db: string, coll: string): Promise<MongoDocsResult>
+  createIndex(connId: string, db: string, coll: string, keys: EJSON, opts?: EJSON): Promise<MongoIndexResult>
+  dropIndex(connId: string, db: string, coll: string, name: string): Promise<DbSimpleResult>
+  runCommand(connId: string, db: string, command: EJSON): Promise<MongoRunCommandResult>
+  close(connId: string): Promise<DbSimpleResult>
+  ping(connId: string): Promise<DbSimpleResult>
+}
+export interface MongoHook extends MongoApi { readonly available: boolean }
+
+export interface DbApi { mysql?: MySQLApi; redis?: RedisApi; mongo?: MongoApi }
+
 const sdk = (globalThis as unknown as { TToolSDK?: SDK }).TToolSDK
 if (!sdk) {
   throw new Error('@maoyugames/ttool-sdk：宿主未注入 TToolSDK。本插件需在「TTool」平台内由宿主加载运行。')
@@ -140,4 +222,7 @@ export const useNow = sdk.useNow
 export const useStorage = sdk.useStorage
 export const useSecrets = sdk.useSecrets
 export const useNet = sdk.useNet
+export const useMySQL = sdk.useMySQL
+export const useRedis = sdk.useRedis
+export const useMongo = sdk.useMongo
 export const platform = sdk.platform

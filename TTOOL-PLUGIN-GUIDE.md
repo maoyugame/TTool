@@ -168,7 +168,12 @@ defineTool({ id: 'xxx', name: '我的工具', desc: '一句话描述', glyph: '�
   - `useStorage()` → `{ available, get(key, fallback?), set(key, value), remove(key), keys() }`：**持久化 KV**，存普通数据（笔记 / 配置 / 收藏）。落盘宿主 userData，按插件隔离（防键碰撞）。`set` 的 value 必须可 JSON 序列化。**普通数据用它，不要再往 localStorage 塞。**
   - `useSecrets()` → `{ available(), get(key), set(key, value), remove(key), keys() }`：**加密凭证存储**（秘钥 / 密码 / 账号 token）。底层用 OS 安全存储（Windows DPAPI / macOS Keychain）**加密落盘**。**敏感数据一律用它，严禁明文存 localStorage / storage。** 系统不支持加密时 `available()` 返回 false。
   - `useNet()` → `{ available, connect({host,port,tls?,timeoutMs?}), write(socketId, Uint8Array), close(socketId), onData/onClose/onError/onDrain(socketId, cb)→取消订阅 }`：**通用 TCP/TLS 字节管道**，用于自实现任意 TCP 协议（数据库 / 自定义协议客户端等）。组件卸载时本 hook 打开的 socket 自动关闭。`write` 返回 `{ok,backpressure}`，`backpressure` 为真时应等 `onDrain` 再续写。
-- **platform**（宿主能力裁剪子集）：`kind` / `isDesktop` / `copyText` / `openExternalApp` / `translate?` / `net?` / `storage?` / `secrets?`（后三者为上述 hooks 的底层 API，一般直接用 hooks 即可）。
+- **数据库便利层 hooks（自 SDK 1.3.0；自动按插件 id 计连接数，卸载自动关闭本 hook 打开的连接）**：
+  - `useMySQL()` → `{ available, connect(config), query(connId, sql, params?), close(connId), ping(connId) }`
+  - `useRedis()` → `{ available, connect(config), command(connId, args[], {binary?}), pipeline(connId, cmds[]), close(connId), ping(connId) }`（RESP2；二进制值用 `binary:true` 取 `Uint8Array`）
+  - `useMongo()` → `{ available, connect(config), find/countDocuments/aggregate/distinct/insertOne/insertMany/updateOne/updateMany/replaceOne/deleteOne/deleteMany/listDatabases/listCollections/listIndexes/createIndex/dropIndex/runCommand(connId, …), close(connId), ping(connId) }`（值用 Extended JSON，如 `{$oid}`/`{$date}`）
+  - **⚠️ 运行时需宿主已实现对应 DB 适配器（规划中）**：未接入前 `available` 为 `false`、各调用返回 `{ok:false,code:'NO_DB'}`。**务必先判 `available` 再使用**。统一错误码、类型保真（大整数/DECIMAL/JSON→字符串、BLOB→Uint8Array、EJSON）、结果体量封顶等语义见仓库 `HOST-DB-SPEC.md`。
+- **platform**（宿主能力裁剪子集）：`kind` / `isDesktop` / `copyText` / `openExternalApp` / `translate?` / `net?` / `storage?` / `secrets?` / `db?`（后几者为上述 hooks 的底层 API，一般直接用 hooks 即可）。
 
 配色与排版**一律用 CSS 变量**（自动适配深/浅色）：`var(--text)` / `var(--text2)` / `var(--text3)` / `var(--surface)` / `var(--surface2)` / `var(--hair)` / `var(--hair2)` / `var(--field)` / `var(--fieldHair)` / `var(--accent)` / `var(--accentSoft)` / `var(--good)` / `var(--pill)`。
 
@@ -303,6 +308,50 @@ declare module '@maoyugames/ttool-sdk' {
     onClose(socketId: string, cb: (info: { hadError: boolean }) => void): () => void
     onError(socketId: string, cb: (err: { error: string; code?: string }) => void): () => void
     onDrain(socketId: string, cb: () => void): () => void
+  }
+  // 数据库便利层（自 1.3.0）；EJSON = extended-JSON plain object（如 {$oid}/{$date}）
+  export type DbCode = 'AUTH_FAILED' | 'CONN_REFUSED' | 'TIMEOUT' | 'DNS_FAIL' | 'TLS_FAIL' | 'NO_CONN' | 'STALE_CONN' | 'TOO_MANY_CONNS' | 'BAD_ARGS' | 'DUP_KEY' | 'SYNTAX_ERR' | 'EJSON_INVALID' | 'RESULT_TRUNCATED' | 'NO_DB' | 'UNKNOWN'
+  export interface DbConnectResult { ok: boolean; connId?: string; serverVersion?: string; code?: DbCode; error?: string }
+  export interface DbSimpleResult { ok: boolean; code?: DbCode; error?: string }
+  export type EJSON = unknown
+  export type RedisReply = string | number | null | Uint8Array | RedisReply[] | { _t: 'error'; message: string }
+  export function useMySQL(): {
+    readonly available: boolean
+    connect(config: { host: string; port?: number; user?: string; password?: string; database?: string; ssl?: boolean | { rejectUnauthorized?: boolean }; connectTimeoutMs?: number }): Promise<DbConnectResult>
+    query(connId: string, sql: string, params?: unknown[]): Promise<{ ok: boolean; durationMs?: number; result?: { kind: 'rows' | 'ok'; rows?: Record<string, unknown>[]; fields?: { name: string; type?: string }[]; affectedRows?: number; insertId?: string; changedRows?: number; truncated?: boolean }; code?: DbCode; error?: string; driverCode?: string; errno?: number }>
+    close(connId: string): Promise<DbSimpleResult>
+    ping(connId: string): Promise<DbSimpleResult>
+  }
+  export function useRedis(): {
+    readonly available: boolean
+    connect(config: { host: string; port?: number; username?: string; password?: string; db?: number; tls?: boolean | { rejectUnauthorized?: boolean }; connectTimeoutMs?: number }): Promise<DbConnectResult>
+    command(connId: string, args: (string | number | Uint8Array)[], opts?: { binary?: boolean }): Promise<{ ok: boolean; durationMs?: number; reply?: RedisReply; code?: DbCode; error?: string; driverCode?: string }>
+    pipeline(connId: string, cmds: { args: (string | number | Uint8Array)[]; binary?: boolean }[]): Promise<{ ok: boolean; durationMs?: number; replies?: RedisReply[]; code?: DbCode; error?: string }>
+    close(connId: string): Promise<DbSimpleResult>
+    ping(connId: string): Promise<DbSimpleResult>
+  }
+  export function useMongo(): {
+    readonly available: boolean
+    connect(config: { uri?: string; host?: string; port?: number; user?: string; password?: string; authSource?: string; tls?: boolean; replicaSet?: string; connectTimeoutMs?: number }): Promise<DbConnectResult>
+    listDatabases(connId: string): Promise<{ ok: boolean; names?: string[]; code?: DbCode; error?: string }>
+    listCollections(connId: string, db: string): Promise<{ ok: boolean; names?: string[]; code?: DbCode; error?: string }>
+    find(connId: string, db: string, coll: string, opts?: { filter?: EJSON; projection?: EJSON; sort?: EJSON; limit?: number; skip?: number }): Promise<{ ok: boolean; durationMs?: number; docs?: EJSON[]; truncated?: boolean; code?: DbCode; error?: string }>
+    countDocuments(connId: string, db: string, coll: string, filter?: EJSON): Promise<{ ok: boolean; count?: number; code?: DbCode; error?: string }>
+    aggregate(connId: string, db: string, coll: string, pipeline: EJSON[], opts?: EJSON): Promise<{ ok: boolean; docs?: EJSON[]; truncated?: boolean; code?: DbCode; error?: string }>
+    distinct(connId: string, db: string, coll: string, field: string, filter?: EJSON, options?: EJSON): Promise<{ ok: boolean; docs?: EJSON[]; code?: DbCode; error?: string }>
+    insertOne(connId: string, db: string, coll: string, doc: EJSON): Promise<{ ok: boolean; insertedId?: EJSON; code?: DbCode; error?: string }>
+    insertMany(connId: string, db: string, coll: string, docs: EJSON[]): Promise<{ ok: boolean; insertedIds?: EJSON[]; code?: DbCode; error?: string }>
+    updateOne(connId: string, db: string, coll: string, filter: EJSON, update: EJSON, opts?: EJSON): Promise<{ ok: boolean; matchedCount?: number; modifiedCount?: number; upsertedId?: EJSON; code?: DbCode; error?: string }>
+    updateMany(connId: string, db: string, coll: string, filter: EJSON, update: EJSON, opts?: EJSON): Promise<{ ok: boolean; matchedCount?: number; modifiedCount?: number; upsertedId?: EJSON; code?: DbCode; error?: string }>
+    replaceOne(connId: string, db: string, coll: string, filter: EJSON, replacement: EJSON, opts?: EJSON): Promise<{ ok: boolean; matchedCount?: number; modifiedCount?: number; upsertedId?: EJSON; code?: DbCode; error?: string }>
+    deleteOne(connId: string, db: string, coll: string, filter: EJSON): Promise<{ ok: boolean; deletedCount?: number; code?: DbCode; error?: string }>
+    deleteMany(connId: string, db: string, coll: string, filter: EJSON): Promise<{ ok: boolean; deletedCount?: number; code?: DbCode; error?: string }>
+    listIndexes(connId: string, db: string, coll: string): Promise<{ ok: boolean; docs?: EJSON[]; code?: DbCode; error?: string }>
+    createIndex(connId: string, db: string, coll: string, keys: EJSON, opts?: EJSON): Promise<{ ok: boolean; name?: string; code?: DbCode; error?: string }>
+    dropIndex(connId: string, db: string, coll: string, name: string): Promise<DbSimpleResult>
+    runCommand(connId: string, db: string, command: EJSON): Promise<{ ok: boolean; result?: EJSON; code?: DbCode; error?: string }>
+    close(connId: string): Promise<DbSimpleResult>
+    ping(connId: string): Promise<DbSimpleResult>
   }
   export const platform: {
     readonly kind: 'web' | 'electron' | 'tauri'
