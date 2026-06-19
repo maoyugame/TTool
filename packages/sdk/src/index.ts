@@ -1,7 +1,7 @@
-// @maoyugame/ttool-sdk —— 工具插件开发 SDK。
+// @maoyugames/ttool-sdk —— 工具插件开发 SDK。
 //
 // 工具作者按正常方式 import 本包；构建时（见脚手架模板的 vite.config）把
-// 'react' / 'react-dom' / 'react/jsx-runtime' / '@maoyugame/ttool-sdk' 标为 external，
+// 'react' / 'react-dom' / 'react/jsx-runtime' / '@maoyugames/ttool-sdk' 标为 external，
 // 分别映射到宿主注入的全局（React / ReactDOM / ReactJsxRuntime / TToolSDK），
 // 从而运行时复用宿主的同一份 React 与 SDK 实例（保证只有一份 React，hooks/context 正常）。
 //
@@ -55,7 +55,7 @@ interface SDK {
 
 const sdk = (globalThis as unknown as { TToolSDK?: SDK }).TToolSDK
 if (!sdk) {
-  throw new Error('@maoyugame/ttool-sdk：宿主未注入 TToolSDK。本插件需在「TTool」平台内由宿主加载运行。')
+  throw new Error('@maoyugames/ttool-sdk：宿主未注入 TToolSDK。本插件需在「TTool」平台内由宿主加载运行。')
 }
 
 export const registerTool = sdk.registerTool

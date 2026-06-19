@@ -3,8 +3,8 @@
 //
 // 外部工具用正常的 `import` 写代码：
 //   import React from 'react'
-//   import { registerTool, ToolPage, ToolHeader, usePersistentState, useToolbox } from '@maoyugame/ttool-sdk'
-// 其构建（见脚手架模板）把 react / react-dom / react/jsx-runtime / @maoyugame/ttool-sdk 标为 external，
+//   import { registerTool, ToolPage, ToolHeader, usePersistentState, useToolbox } from '@maoyugames/ttool-sdk'
+// 其构建（见脚手架模板）把 react / react-dom / react/jsx-runtime / @maoyugames/ttool-sdk 标为 external，
 // 分别映射到下面 installSdkGlobals() 注入的全局，从而复用宿主实例。
 import * as React from 'react'
 import * as ReactDOM from 'react-dom'

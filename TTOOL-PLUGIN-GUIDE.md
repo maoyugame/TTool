@@ -11,7 +11,7 @@
 TTool 是一个跨平台桌面工具平台（Electron + React）。**插件 = 一个独立项目**，构建出**单个 IIFE bundle**（如 `tool.js`）+ 一份 `manifest.json`，由宿主在运行时**动态安装、懒加载**。
 
 关键机制（决定了下面的构建配置，必须照做）：
-- **复用宿主单例**：插件**不打包** React / SDK。`react` / `react-dom` / `react/jsx-runtime` / `@maoyugame/ttool-sdk` 在构建时标为 **external**，映射到宿主注入的全局 `React` / `ReactDOM` / `ReactJsxRuntime` / `TToolSDK`。这样整个应用只有**一份 React**（否则 hooks/context 崩溃）。
+- **复用宿主单例**：插件**不打包** React / SDK。`react` / `react-dom` / `react/jsx-runtime` / `@maoyugames/ttool-sdk` 在构建时标为 **external**，映射到宿主注入的全局 `React` / `ReactDOM` / `ReactJsxRuntime` / `TToolSDK`。这样整个应用只有**一份 React**（否则 hooks/context 崩溃）。
 - **自注册**：插件入口执行时调用 `defineTool({...})` 向宿主注册一个工具。
 - **懒加载**：宿主先读 `manifest.json` 上列表，bundle 在工具首次打开时才加载执行。
 - **桌面安装**：宿主从 GitHub Release / 本地文件夹安装到 `userData/plugins/<id>/`。
@@ -31,8 +31,8 @@ TTool 是一个跨平台桌面工具平台（Electron + React）。**插件 = �
   (icon.png 可选)
 ```
 
-> **SDK 来源**：`@maoyugame/ttool-sdk` 已发布到 **npm 公共 registry**，作为 devDependency 安装：`npm i -D @maoyugame/ttool-sdk`。它提供类型；构建时被 external（不打进产物），运行期由宿主提供实现。
-> （若 `@maoyugame/ttool-sdk` 尚未发布或离线开发，见 **附录 §11** 的本地 d.ts shim 兜底方案。）
+> **SDK 来源**：`@maoyugames/ttool-sdk` 已发布到 **npm 公共 registry**，作为 devDependency 安装：`npm i -D @maoyugames/ttool-sdk`。它提供类型；构建时被 external（不打进产物），运行期由宿主提供实现。
+> （若 `@maoyugames/ttool-sdk` 尚未发布或离线开发，见 **附录 §11** 的本地 d.ts shim 兜底方案。）
 
 ---
 
@@ -51,7 +51,7 @@ TTool 是一个跨平台桌面工具平台（Electron + React）。**插件 = �
     "dev": "vite build --watch"
   },
   "devDependencies": {
-    "@maoyugame/ttool-sdk": "^1.0.0",
+    "@maoyugames/ttool-sdk": "^1.0.0",
     "@vitejs/plugin-react": "^4.3.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -73,13 +73,13 @@ export default defineConfig({
     emptyOutDir: true,
     lib: { entry: 'src/index.tsx', formats: ['iife'], name: 'TToolPlugin', fileName: () => 'tool.js' },
     rollupOptions: {
-      external: ['react', 'react-dom', 'react/jsx-runtime', '@maoyugame/ttool-sdk'],
+      external: ['react', 'react-dom', 'react/jsx-runtime', '@maoyugames/ttool-sdk'],
       output: {
         globals: {
           react: 'React',
           'react-dom': 'ReactDOM',
           'react/jsx-runtime': 'ReactJsxRuntime',
-          '@maoyugame/ttool-sdk': 'TToolSDK',
+          '@maoyugames/ttool-sdk': 'TToolSDK',
         },
         entryFileNames: 'tool.js',
         assetFileNames: '[name][extname]',
@@ -106,7 +106,7 @@ export default defineConfig({
 }
 ```
 
-> 类型来自已安装的 `@maoyugame/ttool-sdk`。无需本地类型声明文件（除非走附录 §11 的离线兜底）。
+> 类型来自已安装的 `@maoyugames/ttool-sdk`。无需本地类型声明文件（除非走附录 §11 的离线兜底）。
 
 ### manifest.json （字段规范见 §6；id 必须全局唯一，sdk 必须为 "1"）
 ```json
@@ -133,7 +133,7 @@ dist
 
 ### src/index.tsx （示例实现，按需替换业务）
 ```tsx
-import { defineTool, ToolPage, ToolHeader, usePersistentState, useToolbox } from '@maoyugame/ttool-sdk'
+import { defineTool, ToolPage, ToolHeader, usePersistentState, useToolbox } from '@maoyugames/ttool-sdk'
 
 function MyTool() {
   const { copy } = useToolbox()
@@ -159,7 +159,7 @@ defineTool({ id: 'xxx', name: '我的工具', desc: '一句话描述', glyph: '�
 
 ---
 
-## 4. SDK API（`@maoyugame/ttool-sdk`，运行时复用宿主实例）
+## 4. SDK API（`@maoyugames/ttool-sdk`，运行时复用宿主实例）
 
 - **注册**：`defineTool(spec)` / `registerTool(spec)`（spec 见 ToolSpec；`component` 为工具主体组件）。
 - **UI 原语**（与平台视觉一致，强烈建议使用）：`ToolPage`（`scroll?` 可滚动/纵向填充两种布局）、`ToolHeader`、`Panel`、`Seg`（分段切换）、`ActionPill`、`ToolIcon`、`MONO`（等宽字体栈）、`labelStyle`。
@@ -172,7 +172,7 @@ defineTool({ id: 'xxx', name: '我的工具', desc: '一句话描述', glyph: '�
 
 ## 5. 开发 / 构建 / 自测 / 发布
 
-1. `npm install`（装 react + vite + plugin-react + `@maoyugame/ttool-sdk`）。
+1. `npm install`（装 react + vite + plugin-react + `@maoyugames/ttool-sdk`）。
 2. 实现 `src/index.tsx`，确保 `defineTool` 的 `id` 与 `manifest.json` 的 `id` 一致。
 3. `npm run build` → 产出 `dist/tool.js`。
 4. **本地自测**：在 TTool 桌面端「设置」开启「开发者模式」→「扩展」→「从本地文件夹安装」，选一个含 `manifest.json` + `dist/tool.js`（及图标）的文件夹即可。建议把 `manifest.json` 与 `dist/tool.js` 放一起，或构建脚本拷到 `dist/`。
@@ -201,13 +201,13 @@ defineTool({ id: 'xxx', name: '我的工具', desc: '一句话描述', glyph: '�
 
 ## 8. 规范（硬性，违反会导致加载失败或被拒绝）
 
-1. **绝不打包 React / @maoyugame/ttool-sdk**：必须严格按 §3 的 `external` + `globals` 配置；否则出现多份 React，hooks/context 崩溃。
+1. **绝不打包 React / @maoyugames/ttool-sdk**：必须严格按 §3 的 `external` + `globals` 配置；否则出现多份 React，hooks/context 崩溃。
 2. **id 全局唯一**：与内置工具或其它插件冲突会被宿主忽略（不显示），且 `manifest.id` 不得为 `.`/`..` 或含路径分隔符。
 3. **`manifest.id` 必须等于 `defineTool` 的 `id`**。
 4. **`manifest.sdk` 必须声明当前 SDK 主版本 `"1"`**：主版本与宿主不一致会被拒绝加载并告警。
 5. **持久化状态 key 必须以插件 id 前缀**（如 `usePersistentState('<id>.foo', ...)`），避免与其它工具冲突。
 6. **配色/排版用 CSS 变量**，不要硬编码颜色，确保深/浅色自适应。
-7. **只依赖 `@maoyugame/ttool-sdk` 暴露的能力**：不要 `import` electron / node 内置模块、不要访问 `window.ttool`/`window.TToolSDK` 之外的宿主内部；需要系统能力（剪贴板/打开应用/翻译）走 `platform`。
+7. **只依赖 `@maoyugames/ttool-sdk` 暴露的能力**：不要 `import` electron / node 内置模块、不要访问 `window.ttool`/`window.TToolSDK` 之外的宿主内部；需要系统能力（剪贴板/打开应用/翻译）走 `platform`。
 8. **受信任模型**：插件以宿主同等权限运行（桌面端）。请勿编写恶意/越权代码；用户安装的是其信任的仓库。
 9. **入口文件名固定 `tool.js`**，`manifest.entry` 与之一致；`entry`/`icon` 不得用 `..` 逃出插件目录（宿主会拒绝）。
 10. **不在顶层执行有副作用的初始化**（全局监听/计时器等）：插件可能被多次加载，副作用应放进组件生命周期内并自行清理。
@@ -227,7 +227,7 @@ defineTool({ id: 'xxx', name: '我的工具', desc: '一句话描述', glyph: '�
 ## 10. 验收清单（创建后逐项确认）
 
 - [ ] 目录含 §2 全部文件；`manifest.id` == `defineTool` 的 `id`；`manifest.sdk` == `"1"`
-- [ ] `vite.config.ts` 的 external/globals 与 §3 完全一致（react/react-dom/react/jsx-runtime/@maoyugame/ttool-sdk）
+- [ ] `vite.config.ts` 的 external/globals 与 §3 完全一致（react/react-dom/react/jsx-runtime/@maoyugames/ttool-sdk）
 - [ ] `npm run build` 成功产出 `dist/tool.js`，且 bundle **未打包** React（体积应很小）
 - [ ] 只用了 §4 列出的 SDK 能力；配色全用 CSS 变量；持久化 key 带 id 前缀
 - [ ] 顶层无副作用初始化
@@ -237,14 +237,14 @@ defineTool({ id: 'xxx', name: '我的工具', desc: '一句话描述', glyph: '�
 
 ## 11. 附录：离线 / 未发布兜底（本地类型 shim）
 
-正常情况用 `npm i -D @maoyugame/ttool-sdk` 即可。**仅当** `@maoyugame/ttool-sdk` 尚未发布、或需离线开发时，用下面的本地类型声明兜底（构建时 `@maoyugame/ttool-sdk` 仍被 external，无需真实安装）：
+正常情况用 `npm i -D @maoyugames/ttool-sdk` 即可。**仅当** `@maoyugames/ttool-sdk` 尚未发布、或需离线开发时，用下面的本地类型声明兜底（构建时 `@maoyugames/ttool-sdk` 仍被 external，无需真实安装）：
 
-1. package.json 的 devDependencies **去掉** `@maoyugame/ttool-sdk`。
+1. package.json 的 devDependencies **去掉** `@maoyugames/ttool-sdk`。
 2. tsconfig.json 的 `include` 改为 `["src", "types"]`。
 3. 新建 `types/ttool-sdk.d.ts`：
 
 ```ts
-declare module '@maoyugame/ttool-sdk' {
+declare module '@maoyugames/ttool-sdk' {
   import type { ComponentType, ReactNode, CSSProperties } from 'react'
   export type HueName = 'blue' | 'purple' | 'amber' | 'teal' | 'green' | 'indigo' | 'pink' | 'gray'
   export interface ToolSpec {
@@ -282,4 +282,4 @@ declare module '@maoyugame/ttool-sdk' {
 }
 ```
 
-> 该 shim 必须与官方 `@maoyugame/ttool-sdk` 类型保持一致；一旦能用 npm 安装，建议改回 §3 的标准方式。
+> 该 shim 必须与官方 `@maoyugames/ttool-sdk` 类型保持一致；一旦能用 npm 安装，建议改回 §3 的标准方式。

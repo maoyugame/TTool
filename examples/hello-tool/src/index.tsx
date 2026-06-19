@@ -1,6 +1,6 @@
 // 示例外部工具插件。独立项目独立构建，产出 IIFE bundle，由宿主动态加载。
-// 作者只依赖 @maoyugame/ttool-sdk —— 运行时复用宿主的 React 与 SDK 实例。
-import { defineTool, ToolPage, ToolHeader, usePersistentState, useToolbox, MONO } from '@maoyugame/ttool-sdk'
+// 作者只依赖 @maoyugames/ttool-sdk —— 运行时复用宿主的 React 与 SDK 实例。
+import { defineTool, ToolPage, ToolHeader, usePersistentState, useToolbox, MONO } from '@maoyugames/ttool-sdk'
 
 function HelloTool() {
   const { copy } = useToolbox()

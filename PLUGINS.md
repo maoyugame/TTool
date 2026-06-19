@@ -7,7 +7,7 @@
 
 ## 工作原理
 
-- **共享单例**：宿主在运行时把 `React` / `ReactDOM` / `react/jsx-runtime` / `@maoyugame/ttool-sdk` 暴露为全局。插件构建时把它们标为 external，因此插件 bundle 不打包 React/SDK，**运行时复用宿主的同一份实例**（只有一份 React，hooks/context 才正常）。
+- **共享单例**：宿主在运行时把 `React` / `ReactDOM` / `react/jsx-runtime` / `@maoyugames/ttool-sdk` 暴露为全局。插件构建时把它们标为 external，因此插件 bundle 不打包 React/SDK，**运行时复用宿主的同一份实例**（只有一份 React，hooks/context 才正常）。
 - **产物**：每个插件构建出**一个 IIFE bundle**（如 `tool.js`）+ 一份 `manifest.json`。
 - **懒加载**：宿主启动只读 `manifest.json`（拿到名称/图标/分类用于列表）；插件 bundle 在**首次打开时**才注入加载并执行 `registerTool` 回填组件。
 
@@ -15,11 +15,11 @@
 
 最快路径：复制本仓库的 `examples/hello-tool/` 作为模板。
 
-1. **依赖**：`npm i -D @maoyugame/ttool-sdk react vite @vitejs/plugin-react`。`@maoyugame/ttool-sdk` 发布在 npm 公共 registry，提供类型 + 运行期桥接；构建时被 external，不进产物。
+1. **依赖**：`npm i -D @maoyugames/ttool-sdk react vite @vitejs/plugin-react`。`@maoyugames/ttool-sdk` 发布在 npm 公共 registry，提供类型 + 运行期桥接；构建时被 external，不进产物。
 2. **写工具**（`src/index.tsx`）：
 
    ```tsx
-   import { defineTool, ToolPage, ToolHeader, usePersistentState, useToolbox } from '@maoyugame/ttool-sdk'
+   import { defineTool, ToolPage, ToolHeader, usePersistentState, useToolbox } from '@maoyugames/ttool-sdk'
 
    function MyTool() {
      const { copy } = useToolbox()
@@ -35,7 +35,7 @@
    defineTool({ id: 'myplugin', name: '我的插件', desc: '一句话描述', glyph: '★', cat: '插件', hue: 'indigo', order: 100, component: MyTool })
    ```
 
-   可用的 SDK 见下方「SDK API」。**只依赖 `@maoyugame/ttool-sdk`，不要自己打包 React。**
+   可用的 SDK 见下方「SDK API」。**只依赖 `@maoyugames/ttool-sdk`，不要自己打包 React。**
 
 3. **构建配置**（`vite.config.ts`，库模式 IIFE + external→全局，见模板）：
 
@@ -43,8 +43,8 @@
    build: {
      lib: { entry: 'src/index.tsx', formats: ['iife'], name: 'MyTool', fileName: () => 'tool.js' },
      rollupOptions: {
-       external: ['react', 'react-dom', 'react/jsx-runtime', '@maoyugame/ttool-sdk'],
-       output: { globals: { react: 'React', 'react-dom': 'ReactDOM', 'react/jsx-runtime': 'ReactJsxRuntime', '@maoyugame/ttool-sdk': 'TToolSDK' } },
+       external: ['react', 'react-dom', 'react/jsx-runtime', '@maoyugames/ttool-sdk'],
+       output: { globals: { react: 'React', 'react-dom': 'ReactDOM', 'react/jsx-runtime': 'ReactJsxRuntime', '@maoyugames/ttool-sdk': 'TToolSDK' } },
      },
    }
    ```
@@ -89,7 +89,7 @@
 
 安装后落盘在 `<userData>/plugins/<id>/`，清单持久化在 `<userData>/plugins/registry.json`。
 
-## SDK API（`@maoyugame/ttool-sdk`）
+## SDK API（`@maoyugames/ttool-sdk`）
 
 - `defineTool(spec)` / `registerTool(spec)` —— 注册工具（spec 见上方字段 + `component`）
 - UI 原语：`ToolPage` / `ToolHeader` / `Panel` / `Seg` / `ActionPill` / `ToolIcon` / `MONO` / `labelStyle`
@@ -99,7 +99,7 @@
 ## 约束与注意
 
 - **受信任模型**：插件以宿主同等权限运行，只安装你信任的仓库。
-- **不要打包 React / @maoyugame/ttool-sdk**：必须按上面的 external 配置，否则会出现多份 React 导致 hooks 崩溃。
+- **不要打包 React / @maoyugames/ttool-sdk**：必须按上面的 external 配置，否则会出现多份 React 导致 hooks 崩溃。
 - **id 全局唯一**：与内置工具或其它插件冲突会被忽略。
 - **桌面端功能**：插件安装/加载为 Electron 桌面端能力；web 构建只运行内置工具。
 - 平台自带一个示例插件源码 `examples/hello-tool/`，可直接构建体验整条链路。

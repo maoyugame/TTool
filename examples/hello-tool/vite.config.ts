@@ -17,13 +17,13 @@ export default defineConfig({
       fileName: () => 'tool.js',
     },
     rollupOptions: {
-      external: ['react', 'react-dom', 'react/jsx-runtime', '@maoyugame/ttool-sdk'],
+      external: ['react', 'react-dom', 'react/jsx-runtime', '@maoyugames/ttool-sdk'],
       output: {
         globals: {
           react: 'React',
           'react-dom': 'ReactDOM',
           'react/jsx-runtime': 'ReactJsxRuntime',
-          '@maoyugame/ttool-sdk': 'TToolSDK',
+          '@maoyugames/ttool-sdk': 'TToolSDK',
         },
         entryFileNames: 'tool.js',
         assetFileNames: '[name][extname]',
