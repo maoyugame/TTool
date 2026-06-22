@@ -13,6 +13,9 @@ textarea:focus, input:focus { outline: none; }
 
 /* ---- 深色（默认） ---- */
 .tb {
+  /* 让原生控件（select 下拉弹层 / option / 日期·复选框 / 控件内滚动条）跟随深浅主题，
+     无需每个插件单独处理。浅色见下方 [data-theme="light"] 覆盖。 */
+  color-scheme: dark;
   --canvas: #0d0e14;
   --wall: radial-gradient(1200px 700px at 78% -8%, rgba(99, 102, 241, .16), transparent 60%),
           radial-gradient(1000px 700px at 8% 108%, rgba(217, 70, 160, .14), transparent 60%), #0d0e14;
@@ -39,6 +42,7 @@ textarea:focus, input:focus { outline: none; }
 
 /* ---- 浅色 ---- */
 .tb[data-theme="light"] {
+  color-scheme: light;
   --canvas: #ececf0;
   --wall: radial-gradient(1200px 700px at 78% -8%, rgba(120, 140, 255, .22), transparent 60%),
           radial-gradient(1000px 700px at 8% 108%, rgba(255, 150, 200, .2), transparent 60%), #eef0f5;

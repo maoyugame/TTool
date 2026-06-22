@@ -40,11 +40,24 @@ const check = (name, cond) => { console.log((cond ? 'PASS' : 'FAIL') + ' ' + nam
   const listed = await invoke('plugins:list')
   check('list 含 hello(source=local)', listed.some((p) => p.manifest.id === 'hello' && p.source && p.source.type === 'local'))
 
-  // 2) 选错文件夹(项目根，manifest 在根但产物在 dist/)：应给出明确错误而非 ENOENT
+  // 2) 宽容解析：选项目根(manifest 在根、产物在 dist/)也应成功安装（不再报错）
+  await invoke('plugins:remove', { id: 'hello' })
   const PROJ_ROOT = path.resolve(__dirname, '..', 'examples', 'hello-tool')
   nextDir = PROJ_ROOT
-  const wrong = await invoke('plugins:installLocal')
-  check('选项目根 → 明确错误(提示 dist)', wrong && wrong.error && /dist/.test(wrong.error))
+  const rootInst = await invoke('plugins:installLocal')
+  check('选项目根也能成功安装(宽容解析)', rootInst && !rootInst.error && rootInst.id === 'hello')
+  check('选项目根 readBundle 成功', typeof (await invoke('plugins:readBundle', { id: 'hello' })) === 'string')
+  // 真正无效：选一个完全没有 manifest.json 的文件夹 → 明确报错
+  const NOMF = path.join(os.tmpdir(), 'ttool-plugin-smoke-nomf')
+  fs.rmSync(NOMF, { recursive: true, force: true })
+  fs.mkdirSync(NOMF, { recursive: true })
+  nextDir = NOMF
+  const noMf = await invoke('plugins:installLocal')
+  check('无 manifest 文件夹 → 明确错误', noMf && noMf.error && /manifest/.test(noMf.error))
+  // 复位：恢复 hello 为复制安装态供后续用例
+  await invoke('plugins:remove', { id: 'hello' })
+  nextDir = HELLO_DIST
+  await invoke('plugins:installLocal')
 
   // 3) 开发者链接：不复制，直接从外部 dist 读
   await invoke('plugins:remove', { id: 'hello' })
@@ -114,6 +127,63 @@ const check = (name, cond) => { console.log((cond ? 'PASS' : 'FAIL') + ' ' + nam
     nextDir = dd
     await invoke('plugins:installLocal')
     check('dist 深层 assets/src 合法资源不被误删', fs.existsSync(path.join(USER_DATA, 'plugins', 'nested', 'assets', 'src', 'needed.png')))
+  }
+
+  // 9) 真实用户布局：manifest 在项目根、产物在 dist/(dist 内无 manifest)、还有 src/。
+  //    选「项目根」复制安装应自包含落地（这是用户遇到「添加失败」的精确场景）。
+  const mkUserLayout = (name) => {
+    const r = path.join(os.tmpdir(), 'ttool-plugin-smoke-' + name)
+    fs.rmSync(r, { recursive: true, force: true })
+    fs.mkdirSync(path.join(r, 'dist'), { recursive: true })
+    fs.mkdirSync(path.join(r, 'src'), { recursive: true })
+    fs.mkdirSync(path.join(r, 'node_modules', 'junk'), { recursive: true })
+    fs.copyFileSync(path.join(HELLO_DIST, 'tool.js'), path.join(r, 'dist', 'tool.js'))
+    fs.writeFileSync(path.join(r, 'src', 'index.tsx'), '// source')
+    fs.writeFileSync(path.join(r, 'manifest.json'), JSON.stringify({ id: name, name: name, glyph: 'u', cat: '插件', hue: 'teal', version: '1', entry: 'tool.js', sdk: '1' }))
+    return r
+  }
+  {
+    const r = mkUserLayout('rootcopy')
+    nextDir = r
+    const res = await invoke('plugins:installLocal')
+    const tj = path.join(USER_DATA, 'plugins', 'rootcopy', 'tool.js')
+    const mj = path.join(USER_DATA, 'plugins', 'rootcopy', 'manifest.json')
+    check('选项目根(复制) 入口+manifest 自包含落地', res && !res.error && fs.existsSync(tj) && fs.existsSync(mj))
+    check('选项目根(复制) 未复制 node_modules', !fs.existsSync(path.join(USER_DATA, 'plugins', 'rootcopy', 'node_modules')))
+    const b = await invoke('plugins:readBundle', { id: 'rootcopy' })
+    check('选项目根(复制) readBundle 成功', typeof b === 'string' && b.length > 50)
+  }
+
+  // 10) 真实用户布局 + 开发者链接：选「项目根」→ manifest 从根读、bundle 从 dist/ 读，且实时
+  {
+    const r = mkUserLayout('rootlink')
+    nextDir = r
+    const res = await invoke('plugins:installLocalLink')
+    check('选项目根(链接) 成功', res && !res.error && res.id === 'rootlink')
+    const b = await invoke('plugins:readBundle', { id: 'rootlink' })
+    check('选项目根(链接) readBundle 从 dist 取到', typeof b === 'string' && b.length > 50)
+    // 实时：改 dist/tool.js 立即反映
+    const tf = path.join(r, 'dist', 'tool.js')
+    fs.writeFileSync(tf, fs.readFileSync(tf, 'utf8') + '\n/*ROOTLINK-LIVE*/')
+    const b2 = await invoke('plugins:readBundle', { id: 'rootlink' })
+    check('选项目根(链接) 实时反映 dist 改动', b2.includes('ROOTLINK-LIVE'))
+    const lst = await invoke('plugins:list')
+    check('选项目根(链接) list 含该插件', lst.some((p) => p.manifest.id === 'rootlink'))
+  }
+
+  // 11) 用户的精确失败场景：选「dist 子目录」(dist 内只有 bundle、manifest 在父级项目根) —— 向上回退
+  {
+    const r = mkUserLayout('selectdist')
+    nextDir = path.join(r, 'dist') // 用户选的是 dist，不是根
+    const res = await invoke('plugins:installLocalLink')
+    check('选 dist(manifest 在父级) 链接成功', res && !res.error && res.id === 'selectdist')
+    const b = await invoke('plugins:readBundle', { id: 'selectdist' })
+    check('选 dist 链接 readBundle 成功', typeof b === 'string' && b.length > 50)
+    // 复制安装同样：选 dist 也成功且自包含落地
+    const r2 = mkUserLayout('selectdist2')
+    nextDir = path.join(r2, 'dist')
+    const res2 = await invoke('plugins:installLocal')
+    check('选 dist(manifest 在父级) 复制成功+自包含', res2 && !res2.error && fs.existsSync(path.join(USER_DATA, 'plugins', 'selectdist2', 'manifest.json')) && fs.existsSync(path.join(USER_DATA, 'plugins', 'selectdist2', 'tool.js')))
   }
 
   console.log(pass ? 'PLUGIN SMOKE PASS' : 'PLUGIN SMOKE FAIL')

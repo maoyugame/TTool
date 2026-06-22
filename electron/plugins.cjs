@@ -47,6 +47,16 @@ function setupPlugins({ ipcMain, app, dialog, getWin }) {
     return linked ? path.resolve(linked) : pluginDir(id)
   }
 
+  // 解析 bundle / 图标等资源：优先所选目录根，回退其 dist/ 子目录。
+  // 兼容「manifest.json 在项目根、构建产物在 dist/」这一最常见布局——开发者链接到项目根时，
+  // manifest 从根读（稳定、不被 emptyOutDir 清掉），bundle 从 dist/ 读（每次构建刷新，实时热重载）。
+  const resolveAsset = (baseDir, rel) => {
+    const a = safeJoin(baseDir, rel)
+    if (fs.existsSync(a)) return a
+    const b = safeJoin(baseDir, path.join('dist', rel))
+    return fs.existsSync(b) ? b : a // 都没有则返回首选，让 readFile 抛带明确路径的 ENOENT
+  }
+
   async function readManifest(id) {
     return JSON.parse(await fsp.readFile(path.join(resolveDir(id), 'manifest.json'), 'utf8'))
   }
@@ -54,7 +64,7 @@ function setupPlugins({ ipcMain, app, dialog, getWin }) {
   async function iconDataUrl(id, manifest) {
     if (!manifest.icon || /^data:/.test(manifest.icon)) return manifest.icon
     try {
-      const buf = await fsp.readFile(safeJoin(resolveDir(id), manifest.icon))
+      const buf = await fsp.readFile(resolveAsset(resolveDir(id), manifest.icon))
       const ext = path.extname(manifest.icon).slice(1).toLowerCase()
       const mime = ext === 'svg' ? 'image/svg+xml' : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'image/' + (ext || 'png')
       return `data:${mime};base64,${buf.toString('base64')}`
@@ -101,7 +111,7 @@ function setupPlugins({ ipcMain, app, dialog, getWin }) {
     if (!safeId(id)) throw new Error('非法插件 id')
     const manifest = await readManifest(id)
     const entry = manifest.entry || 'tool.js'
-    return fsp.readFile(safeJoin(resolveDir(id), entry), 'utf8')
+    return fsp.readFile(resolveAsset(resolveDir(id), entry), 'utf8')
   })
 
   ipcMain.handle('plugins:setEnabled', (_e, { id, enabled }) => {
@@ -124,60 +134,75 @@ function setupPlugins({ ipcMain, app, dialog, getWin }) {
     return true
   })
 
-  // 读取所选文件夹的 manifest 并校验 id 与入口文件存在；缺失时给出可操作的明确错误。
-  // 常见踩坑：选了项目根目录（manifest 在根、产物在 dist/）→ 提示改选 dist/。
+  // 读取所选文件夹的 manifest 并定位入口文件。最大限度宽容用户选哪个文件夹：
+  //  - manifest.json 在所选目录 → 用它；
+  //  - 所选目录没有但其「父目录」有（用户选了 dist/，manifest 在项目根）→ 用父目录的 manifest；
+  //  - 入口文件可在 manifest 所在目录、所选目录、或 manifest 目录的 dist/ 子目录。
+  // 覆盖：选项目根、选自包含 dist/、选只含 bundle 的 dist/（manifest 在父级）三种布局。
   async function readDirManifest(dir) {
+    const parent = path.dirname(dir)
+    let manifestDir = null
+    if (fs.existsSync(path.join(dir, 'manifest.json'))) manifestDir = dir
+    else if (parent && parent !== dir && fs.existsSync(path.join(parent, 'manifest.json'))) manifestDir = parent
+    if (!manifestDir) {
+      throw new Error('找不到 manifest.json：请选择插件「项目根目录」（含 manifest.json），或其 dist 子文件夹')
+    }
     let manifest
     try {
-      manifest = JSON.parse(await fsp.readFile(path.join(dir, 'manifest.json'), 'utf8'))
-    } catch {
-      throw new Error('所选文件夹缺少 manifest.json（应选择含 manifest.json 与入口 bundle 的「dist」文件夹）')
+      manifest = JSON.parse(await fsp.readFile(path.join(manifestDir, 'manifest.json'), 'utf8'))
+    } catch (e) {
+      throw new Error('manifest.json 解析失败：' + (e && e.message ? e.message : String(e)))
     }
     const id = safeId(manifest.id)
     if (!id) throw new Error('manifest.id 非法或缺失')
     const entry = manifest.entry || 'tool.js'
-    if (!fs.existsSync(path.join(dir, entry))) {
-      const hint = fs.existsSync(path.join(dir, 'dist', entry))
-        ? `；检测到 dist/${entry}——请改选该插件的「dist」文件夹安装`
-        : `；请先运行 npm run build（产物在 dist/，已自动包含 manifest.json），再选择「dist」文件夹`
-      throw new Error(`入口文件 ${entry} 不在所选文件夹${hint}`)
-    }
-    return { manifest, id, entry }
+    // 入口所在目录候选：所选目录、manifest 目录、manifest 目录的 dist/
+    const cands = [dir, manifestDir, path.join(manifestDir, 'dist')]
+    const entryDir = cands.find((d) => fs.existsSync(path.join(d, entry))) || null
+    if (!entryDir) throw new Error(`入口文件 ${entry} 不存在（已查所选目录与其 dist/）；请先运行 npm run build`)
+    return { manifest, id, entry, entryDir, manifestDir }
   }
 
-  // ---- 本地安装（开发者模式 · 复制）：把所选文件夹复制进 userData ----
+  // ---- 本地安装（开发者模式 · 复制）：把所选文件夹复制进 userData，落地为自包含目录 ----
   async function installFromDir(dir) {
-    const { manifest, id, entry } = await readDirManifest(dir)
+    const { manifest, id, entry, entryDir, manifestDir } = await readDirManifest(dir)
     const dest = pluginDir(id)
-    const base = path.resolve(dir)
     await fsp.rm(dest, { recursive: true, force: true })
     await fsp.mkdir(dest, { recursive: true })
-    // 仅跳过紧邻所选目录的「顶层」开发垃圾（避免误选项目根时复制 node_modules/.git）。
-    // 按相对源根的首段判断、且永不跳过根本身——否则：① 选中名为 src 的文件夹会令根被过滤、
-    // 整个复制为空（dest 空 → 后续 readBundle ENOENT）；② dist 深层恰好名为 src/.git 的合法资源会被误删。
-    const skip = new Set(['node_modules', '.git', 'src', '.vscode', '.idea'])
-    await fsp.cp(dir, dest, {
-      recursive: true,
-      filter: (src) => {
-        const rel = path.relative(base, path.resolve(src))
-        return rel === '' || !skip.has(rel) // rel==='' 是根，放行；只过滤首段命中的顶层项
-      },
-    })
+    if (path.resolve(entryDir) === path.resolve(manifestDir)) {
+      // manifest 与入口同目录（自包含 dist/ 或平铺）：复制该目录，仅跳过紧邻根的顶层开发垃圾。
+      // 按相对源根首段判断、永不跳过根本身——否则选中名为 src 的目录会令根被过滤、复制为空。
+      const base = path.resolve(entryDir)
+      const skip = new Set(['node_modules', '.git', 'src', '.vscode', '.idea'])
+      await fsp.cp(entryDir, dest, {
+        recursive: true,
+        filter: (src) => {
+          const rel = path.relative(base, path.resolve(src))
+          return rel === '' || !skip.has(rel)
+        },
+      })
+    } else {
+      // manifest 与入口分处不同目录（manifest 在根、产物在 dist/）：复制入口目录/* + manifest.json，使 dest 自包含
+      await fsp.cp(entryDir, dest, { recursive: true })
+      await fsp.copyFile(path.join(manifestDir, 'manifest.json'), path.join(dest, 'manifest.json'))
+    }
     // 断言入口确实落地，把「静默空复制」变成明确错误而非延迟到 readBundle 才 ENOENT
-    if (!fs.existsSync(safeJoin(dest, entry))) throw new Error(`复制后入口 ${entry} 缺失，请确认所选 dist 文件夹完整`)
+    if (!fs.existsSync(safeJoin(dest, entry))) throw new Error(`复制后入口 ${entry} 缺失，请确认所选文件夹完整`)
     const idx = readIndex()
     idx[id] = { enabled: true, source: { type: 'local', path: dir } }
     writeIndex(idx)
     return { id, manifest }
   }
 
-  // ---- 开发者链接（开发者模式 · 不复制）：直接从外部目录加载，改了重新构建+重载即生效 ----
+  // ---- 开发者链接（开发者模式 · 不复制）：链接到 manifest 所在目录，bundle 经 dist/ 回退实时读取 ----
   async function installLinkDir(dir) {
-    const { manifest, id } = await readDirManifest(dir)
+    const { manifest, id, manifestDir } = await readDirManifest(dir)
+    // 链接到 manifest 所在目录（项目根或自包含 dist）；readBundle 会用 resolveAsset 回退到 dist/ 找入口。
+    const linkDir = manifestDir
     // 同 id 若已有复制安装的副本，清掉以免与链接冲突
     await fsp.rm(pluginDir(id), { recursive: true, force: true }).catch(() => {})
     const idx = readIndex()
-    idx[id] = { enabled: true, source: { type: 'local-link', path: path.resolve(dir) } }
+    idx[id] = { enabled: true, source: { type: 'local-link', path: path.resolve(linkDir) } }
     writeIndex(idx)
     return { id, manifest }
   }
@@ -187,29 +212,37 @@ function setupPlugins({ ipcMain, app, dialog, getWin }) {
   // 安装路径只来自对话框、绝不取调用方参数），加上受信任插件模型（插件本就同宿主权限）。
   ipcMain.handle('plugins:installLocal', async () => {
     const res = await dialog.showOpenDialog(getWin && getWin(), {
-      title: '选择插件 dist 文件夹（含 manifest.json 与入口 bundle）',
+      title: '选择插件项目根目录或 dist 文件夹（含 manifest.json）',
       properties: ['openDirectory'],
     })
     if (res.canceled || !res.filePaths[0]) return { canceled: true }
+    console.log('[ttool] installLocal 选择:', res.filePaths[0])
     try {
       const r = await installFromDir(res.filePaths[0])
+      console.log('[ttool] installLocal 成功:', r.id)
       return { canceled: false, ...r }
     } catch (e) {
-      return { canceled: false, error: e instanceof Error ? e.message : String(e) }
+      const msg = e instanceof Error ? e.message : String(e)
+      console.error('[ttool] installLocal 失败:', msg)
+      return { canceled: false, error: msg }
     }
   })
 
   ipcMain.handle('plugins:installLocalLink', async () => {
     const res = await dialog.showOpenDialog(getWin && getWin(), {
-      title: '选择插件 dist 文件夹做开发者链接（改代码→重新构建→重载窗口即生效）',
+      title: '选择插件项目根目录或 dist 文件夹做开发者链接（改代码→重新构建→Ctrl+R 重载即生效）',
       properties: ['openDirectory'],
     })
     if (res.canceled || !res.filePaths[0]) return { canceled: true }
+    console.log('[ttool] installLocalLink 选择:', res.filePaths[0])
     try {
       const r = await installLinkDir(res.filePaths[0])
+      console.log('[ttool] installLocalLink 成功:', r.id, '→', readIndex()[r.id] && readIndex()[r.id].source.path)
       return { canceled: false, ...r }
     } catch (e) {
-      return { canceled: false, error: e instanceof Error ? e.message : String(e) }
+      const msg = e instanceof Error ? e.message : String(e)
+      console.error('[ttool] installLocalLink 失败:', msg)
+      return { canceled: false, error: msg }
     }
   })
 

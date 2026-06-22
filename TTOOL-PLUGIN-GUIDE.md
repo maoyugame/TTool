@@ -210,13 +210,13 @@ defineTool({ id: 'xxx', name: '我的工具', desc: '一句话描述', glyph: '�
 
 ### 5.1 本地调试 / debug 测试（开发者模式）
 
-> 在 TTool 桌面端「设置」开启「**开发者模式**」→ 标题栏 🧩 打开「扩展」面板，dev 模式下会出现两个本地入口。**都选插件的 `dist` 文件夹**（不是项目根目录！）。
+> 在 TTool 桌面端「设置」开启「**开发者模式**」→ 标题栏 🧩 打开「扩展」面板，dev 模式下会出现两个本地入口。**选插件的「项目根目录」或 `dist` 文件夹都可以**——宿主会自动定位 `manifest.json`（项目根或 dist 内）与入口 bundle（根 / `dist/`），两种选法均可。
 
-- **🔗 开发者链接（实时调试，推荐）**：选 `dist/` 后**不复制**、直接从该目录加载。调试循环最顺：
+- **🔗 开发者链接（实时调试，推荐）**：选目录后**不复制**、直接从该目录加载。调试循环最顺：
   1. 终端跑 `npm run dev`（= `vite build --watch`，改 `src` 自动重新构建 `dist/`）；
   2. 在 TTool 里改完代码、等 watch 重新构建好，按 **`Ctrl+R`（macOS `⌘R`）重载窗口**，新代码即生效——**无需重新安装**；
   3. 按 **`F12`（或 `Ctrl+Shift+I`）打开开发者工具**，在 Console 看插件的 `console.log` 与报错堆栈。
-- **＋ 从本地文件夹安装（复制）**：选 `dist/` 后把内容**复制**进宿主 `userData/plugins/<id>/`。改代码后需**重新安装**才更新（适合模拟正式安装后的状态，不便于反复调试）。
+- **＋ 从本地文件夹安装（复制）**：选目录后把内容**复制**进宿主 `userData/plugins/<id>/`（落地为自包含目录）。改代码后需**重新安装**才更新（适合模拟正式安装后的状态，不便于反复调试）。
 
 **调试快捷键（任意构建均可用）**：`F12` / `Ctrl+Shift+I` 开关开发者工具；`Ctrl+R` / `F5` 重载窗口。
 
@@ -224,12 +224,14 @@ defineTool({ id: 'xxx', name: '我的工具', desc: '一句话描述', glyph: '�
 
 | 现象 / 报错 | 原因 | 解决 |
 | --- | --- | --- |
-| `plugins:readBundle ... ENOENT ... \plugins\<id>\tool.js` | 安装时选了**项目根目录**（`manifest.json` 在根、产物在 `dist/`），二者不同层 | **改选 `dist/` 文件夹**安装；确认 `npm run build` 后 `dist/` 内有 `manifest.json` + `tool.js`（脚手架的 `copyManifest` 插件会自动放好）。新版宿主会直接提示“请改选 dist 文件夹”而非裸 ENOENT |
-| 安装报“缺少 manifest.json” | 选的文件夹里没有 `manifest.json` | 选 `dist/`（构建已把 manifest 复制进去） |
+| 安装报“找不到 manifest.json” | 选的目录及其父目录都没有 `manifest.json` | 选插件「项目根目录」或其 `dist` 文件夹；确认 `npm run build` 已产出 |
+| `plugins:readBundle ... ENOENT ... tool.js` | 入口 bundle 没构建出来 | 先 `npm run build`（产物 `dist/tool.js`），再安装/链接 |
 | 插件不显示 / Console: `SDK v? 主版本不兼容` | `manifest.sdk` 主版本与宿主不符 | 置为 `"1"`（见 §9） |
 | Console: `Invalid hook call` / 多份 React | 把 React/SDK 打进了 bundle | 严格按 §3 的 `external` + `globals` 配置，别 `npm i` 后又被打包 |
 | 插件里 `useMySQL()` 等 `available` 为 false / 返回 `NO_DB` | 在 web 端，或宿主未接入对应能力 | DB/net/storage 仅桌面端可用；先判 `available` 再用 |
 | 改了代码但 TTool 没变化 | 链接模式忘了重载，或复制模式忘了重装 | 链接模式按 `Ctrl+R` 重载；复制模式重新安装 |
+| **`<select>` 下拉/控件配色不跟随深浅主题** | 见 §7.1 | 用 CSS 变量给控件上色 + 优先用 `Seg`/自绘下拉 |
+| **切换工具标签后，之前输入/查询结果消失** | 切标签会重挂载工具（见 §7.2） | 用 `usePersistentState`（key 带插件 id 前缀）保活 |
 
 ### 5.3 正式发布（GitHub Release）
 
@@ -253,6 +255,52 @@ defineTool({ id: 'xxx', name: '我的工具', desc: '一句话描述', glyph: '�
 | `icon` | ⬜ | 图标文件名（与 bundle 同目录）或 data URL；省略则用 glyph |
 | `order` | ⬜ | 展示排序，越小越靠前 |
 | `keywords` | ⬜ | 搜索补充词 / 拼音别名 |
+
+---
+
+## 7. 常见坑与最佳实践（务必先读，避免反复踩）
+
+### 7.1 主题：原生控件不会自动跟随深浅色
+
+平台用 CSS 变量做深/浅色自适应（`var(--text)` / `var(--field)` …）。**普通元素只要用这些变量就会自动适配**；但 `<select>` / `<option>` / `<input>` 等**原生控件**默认用浏览器/OS 配色，不读你的 CSS 变量——在深色主题下常显示成「白底黑字」，很突兀。
+
+- 宿主已对整个应用设了 `color-scheme`，所以原生控件的**下拉弹层、日期选择器、复选框、控件内滚动条**会**自动跟随**当前深浅主题——这部分你无需处理。
+- 但**控件本体的背景/文字/边框仍需你显式用 CSS 变量上色**，否则闭合态颜色不统一：
+
+```tsx
+// ❌ 裸 select：闭合态配色不跟随主题
+<select>{/* ... */}</select>
+
+// ✅ 显式用 CSS 变量；option 也给底色（部分平台下拉项需要）
+<select style={{ background: 'var(--field)', color: 'var(--text)', border: '1px solid var(--fieldHair)', borderRadius: 8, padding: '6px 10px' }}>
+  <option style={{ background: 'var(--surface)', color: 'var(--text)' }}>选项</option>
+</select>
+```
+
+- **更省心**：优先用 SDK 的 `<Seg>`（分段选择）或**自绘下拉**（普通 div + 绝对定位列表），它们用 CSS 变量、配色完全可控、跨平台一致。
+- 铁律：**任何颜色都用 CSS 变量，绝不硬编码**（如 `#fff` / `black` / `rgb(...)`）；可用令牌见 §4 末尾列表。
+
+### 7.2 状态保活：切换工具标签会「重挂载」你的工具
+
+平台在**切换工具标签时会卸载并重新挂载**你的工具组件（用于重放入场动效）。这意味着用 `useState`/`useRef` 持有的一切——输入框内容、已查询的数据、列表、滚动位置、展开/折叠状态——**在切走再切回后会全部丢失、组件从初始态重来**。
+
+- **解决：用 `usePersistentState(key, 初始值)` 代替 `useState`**，它把状态存在宿主模块级存储里、跨重挂载存活，写法和 `useState` 一样：
+
+```tsx
+import { usePersistentState } from '@maoyugames/ttool-sdk'
+
+// ❌ 切标签后丢失
+const [sql, setSql] = useState('')
+// ✅ 跨标签切换存活（key 必须带插件 id 前缀，避免与其它工具冲突）
+const [sql, setSql] = usePersistentState('mysql.sql', '')
+// 不想切回来重新请求的数据/结果，也用它缓存：
+const [rows, setRows] = usePersistentState<Row[]>('mysql.rows', [])
+```
+
+- **生效范围**：`usePersistentState` 在**本次应用运行期间**一直存活（切标签、重挂载都不丢），但**应用重启后清空**。
+  - 要**跨重启持久**的数据（草稿、收藏、配置）→ 用 `useStorage()`（落盘，见 §4）。
+  - 要存**密码/密钥/token** → 用 `useSecrets()`（加密落盘，见 §4）。
+- `useEffect` 里发起的请求会在**每次重挂载时重跑**——若不希望切回来就重新请求，把结果用 `usePersistentState` 缓存，并在 effect 里先判断「已有缓存则跳过」。
 
 ---
 

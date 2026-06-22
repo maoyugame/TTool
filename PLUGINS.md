@@ -112,4 +112,7 @@
 - **不要打包 React / @maoyugames/ttool-sdk**：必须按上面的 external 配置，否则会出现多份 React 导致 hooks 崩溃。
 - **id 全局唯一**：与内置工具或其它插件冲突会被忽略。
 - **桌面端功能**：插件安装/加载为 Electron 桌面端能力；web 构建只运行内置工具。
+- **两个高频坑（详见 `TTOOL-PLUGIN-GUIDE.md` §7）**：
+  - **主题**：原生 `<select>`/`<input>` 控件本体配色不跟随深浅主题，需用 CSS 变量显式上色（或用 SDK `Seg`/自绘下拉）；颜色一律用 CSS 变量、勿硬编码（宿主已设 `color-scheme`，下拉弹层/日期选择器等会自动跟随）。
+  - **状态保活**：切换工具标签会重挂载你的工具，`useState` 持有的输入/数据会丢失——用 `usePersistentState('<id>.key', init)` 保活（跨重启用 `useStorage`）。
 - 平台自带一个示例插件源码 `examples/hello-tool/`，可直接构建体验整条链路。
