@@ -79,6 +79,22 @@ function createWindow() {
   // 窗口获得焦点 → 通知渲染层（用于自动聚焦搜索框）
   win.on('focus', () => win.webContents.send('ttool:window-focus'))
 
+  // 调试快捷键（无菜单的无边框窗口默认不响应，故显式处理）：
+  //   F12 / Ctrl(⌘)+Shift+I → 开/关开发者工具（看插件 console 错误）
+  //   Ctrl(⌘)+R / F5         → 重载窗口（开发者链接插件改代码重新构建后，重载即生效）
+  win.webContents.on('before-input-event', (e, input) => {
+    if (input.type !== 'keyDown') return
+    const mod = process.platform === 'darwin' ? input.meta : input.control
+    const key = (input.key || '').toLowerCase()
+    if (key === 'f12' || (mod && input.shift && key === 'i')) {
+      win.webContents.toggleDevTools()
+      e.preventDefault()
+    } else if ((mod && key === 'r') || key === 'f5') {
+      win.webContents.reload()
+      e.preventDefault()
+    }
+  })
+
   // 绑定宿主能力的 owner 清理（窗口销毁 / 渲染崩溃 / 整页重载时回收连接）
   if (host) host.bindWindow(win)
 

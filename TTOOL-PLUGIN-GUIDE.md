@@ -51,7 +51,7 @@ TTool 是一个跨平台桌面工具平台（Electron + React）。**插件 = �
     "dev": "vite build --watch"
   },
   "devDependencies": {
-    "@maoyugames/ttool-sdk": "^1.0.0",
+    "@maoyugames/ttool-sdk": "^1.3.0",
     "@vitejs/plugin-react": "^4.3.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -61,13 +61,36 @@ TTool 是一个跨平台桌面工具平台（Electron + React）。**插件 = �
 }
 ```
 
-### vite.config.ts （**必须保持 external/globals 映射，勿改键名**）
+### vite.config.ts （**必须保持 external/globals 映射，勿改键名**；含 copyManifest 使 dist 自包含）
 ```ts
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { copyFileSync, existsSync, readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
+// 每次构建后把 manifest.json（及 icon）复制进 dist/，使 dist/ 成为「自包含插件包」
+// （manifest.json 与 tool.js 同层，manifest.entry='tool.js' 可解析）。
+// 本地安装/链接选 dist/、GitHub Release 上传 dist/* —— 布局一致。build 与 dev(--watch) 都生效。
+function copyManifest() {
+  return {
+    name: 'ttool-copy-manifest',
+    closeBundle() {
+      const out = resolve('dist')
+      copyFileSync('manifest.json', resolve(out, 'manifest.json'))
+      try {
+        const m = JSON.parse(readFileSync('manifest.json', 'utf8'))
+        if (m.icon && !/^data:/.test(m.icon) && existsSync(m.icon)) {
+          copyFileSync(m.icon, resolve(out, m.icon.split('/').pop()))
+        }
+      } catch {
+        /* 无 icon 或解析失败时忽略 */
+      }
+    },
+  }
+}
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), copyManifest()],
   build: {
     outDir: 'dist',
     emptyOutDir: true,
@@ -183,9 +206,34 @@ defineTool({ id: 'xxx', name: '我的工具', desc: '一句话描述', glyph: '�
 
 1. `npm install`（装 react + vite + plugin-react + `@maoyugames/ttool-sdk`）。
 2. 实现 `src/index.tsx`，确保 `defineTool` 的 `id` 与 `manifest.json` 的 `id` 一致。
-3. `npm run build` → 产出 `dist/tool.js`。
-4. **本地自测**：在 TTool 桌面端「设置」开启「开发者模式」→「扩展」→「从本地文件夹安装」，选一个含 `manifest.json` + `dist/tool.js`（及图标）的文件夹即可。建议把 `manifest.json` 与 `dist/tool.js` 放一起，或构建脚本拷到 `dist/`。
-5. **正式发布（GitHub Release）**：在插件仓库发一个 Release，**附件包含** `manifest.json`、`tool.js`（及可选图标，文件名与 `manifest.icon` 一致）。用户在 TTool「扩展」面板输入 `owner/repo` 即可拉取最新 Release 安装。
+3. `npm run build` → 产出 **自包含的 `dist/`**：`vite.config.ts` 里的 `copyManifest` 插件（§3 脚手架已含）会在每次构建后把 `manifest.json`（及 `icon`）复制进 `dist/`，因此 `dist/` 内含 `manifest.json` + `tool.js`（+ 图标）**同层**——`manifest.entry:"tool.js"` 正确解析。**`dist/` 就是你的插件包**，本地安装与 GitHub 发布都用它。
+
+### 5.1 本地调试 / debug 测试（开发者模式）
+
+> 在 TTool 桌面端「设置」开启「**开发者模式**」→ 标题栏 🧩 打开「扩展」面板，dev 模式下会出现两个本地入口。**都选插件的 `dist` 文件夹**（不是项目根目录！）。
+
+- **🔗 开发者链接（实时调试，推荐）**：选 `dist/` 后**不复制**、直接从该目录加载。调试循环最顺：
+  1. 终端跑 `npm run dev`（= `vite build --watch`，改 `src` 自动重新构建 `dist/`）；
+  2. 在 TTool 里改完代码、等 watch 重新构建好，按 **`Ctrl+R`（macOS `⌘R`）重载窗口**，新代码即生效——**无需重新安装**；
+  3. 按 **`F12`（或 `Ctrl+Shift+I`）打开开发者工具**，在 Console 看插件的 `console.log` 与报错堆栈。
+- **＋ 从本地文件夹安装（复制）**：选 `dist/` 后把内容**复制**进宿主 `userData/plugins/<id>/`。改代码后需**重新安装**才更新（适合模拟正式安装后的状态，不便于反复调试）。
+
+**调试快捷键（任意构建均可用）**：`F12` / `Ctrl+Shift+I` 开关开发者工具；`Ctrl+R` / `F5` 重载窗口。
+
+### 5.2 常见错误与排查
+
+| 现象 / 报错 | 原因 | 解决 |
+| --- | --- | --- |
+| `plugins:readBundle ... ENOENT ... \plugins\<id>\tool.js` | 安装时选了**项目根目录**（`manifest.json` 在根、产物在 `dist/`），二者不同层 | **改选 `dist/` 文件夹**安装；确认 `npm run build` 后 `dist/` 内有 `manifest.json` + `tool.js`（脚手架的 `copyManifest` 插件会自动放好）。新版宿主会直接提示“请改选 dist 文件夹”而非裸 ENOENT |
+| 安装报“缺少 manifest.json” | 选的文件夹里没有 `manifest.json` | 选 `dist/`（构建已把 manifest 复制进去） |
+| 插件不显示 / Console: `SDK v? 主版本不兼容` | `manifest.sdk` 主版本与宿主不符 | 置为 `"1"`（见 §9） |
+| Console: `Invalid hook call` / 多份 React | 把 React/SDK 打进了 bundle | 严格按 §3 的 `external` + `globals` 配置，别 `npm i` 后又被打包 |
+| 插件里 `useMySQL()` 等 `available` 为 false / 返回 `NO_DB` | 在 web 端，或宿主未接入对应能力 | DB/net/storage 仅桌面端可用；先判 `available` 再用 |
+| 改了代码但 TTool 没变化 | 链接模式忘了重载，或复制模式忘了重装 | 链接模式按 `Ctrl+R` 重载；复制模式重新安装 |
+
+### 5.3 正式发布（GitHub Release）
+
+在插件仓库发一个 Release，**把 `dist/` 里的文件作为附件全部上传**：`manifest.json`、`tool.js`（及可选图标，文件名与 `manifest.icon` 一致）。用户在 TTool「扩展」面板输入 `owner/repo` 即可拉取最新 Release 安装。
 
 ---
 
@@ -237,11 +285,11 @@ defineTool({ id: 'xxx', name: '我的工具', desc: '一句话描述', glyph: '�
 ## 10. 验收清单（创建后逐项确认）
 
 - [ ] 目录含 §2 全部文件；`manifest.id` == `defineTool` 的 `id`；`manifest.sdk` == `"1"`
-- [ ] `vite.config.ts` 的 external/globals 与 §3 完全一致（react/react-dom/react/jsx-runtime/@maoyugames/ttool-sdk）
-- [ ] `npm run build` 成功产出 `dist/tool.js`，且 bundle **未打包** React（体积应很小）
+- [ ] `vite.config.ts` 的 external/globals 与 §3 完全一致（react/react-dom/react/jsx-runtime/@maoyugames/ttool-sdk），并含 `copyManifest` 插件
+- [ ] `npm run build` 成功，**`dist/` 内同时有 `tool.js` 与 `manifest.json`**（+ 可选图标）；bundle **未打包** React（体积应很小）
 - [ ] 只用了 §4 列出的 SDK 能力；配色全用 CSS 变量；持久化 key 带 id 前缀
 - [ ] 顶层无副作用初始化
-- [ ] 本地（开发者模式）安装后能在 TTool 启动台看到并打开、功能正常
+- [ ] 本地（开发者模式）**选 `dist/` 文件夹**链接/安装后，能在 TTool 启动台看到并打开、功能正常（按 `F12` 看 Console 无报错）
 
 ---
 

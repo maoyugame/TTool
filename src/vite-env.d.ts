@@ -17,6 +17,7 @@ interface TToolBridge {
     list: () => Promise<unknown[]>
     installGithub: (repo: string, tag?: string) => Promise<unknown>
     installLocal: () => Promise<unknown>
+    installLocalLink: () => Promise<unknown>
     remove: (id: string) => Promise<void>
     setEnabled: (id: string, enabled: boolean) => Promise<void>
     update: (id: string) => Promise<unknown>

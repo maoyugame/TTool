@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld('ttool', {
     list: () => ipcRenderer.invoke('plugins:list'),
     installGithub: (repo, tag) => ipcRenderer.invoke('plugins:installGithub', { repo, tag }),
     installLocal: () => ipcRenderer.invoke('plugins:installLocal'),
+    installLocalLink: () => ipcRenderer.invoke('plugins:installLocalLink'),
     remove: (id) => ipcRenderer.invoke('plugins:remove', { id }),
     setEnabled: (id, enabled) => ipcRenderer.invoke('plugins:setEnabled', { id, enabled }),
     update: (id) => ipcRenderer.invoke('plugins:update', { id }),

@@ -84,10 +84,15 @@
 
 点标题栏 🧩 打开「扩展 · 工具插件」：
 - **从 GitHub 安装**：输入 `owner/repo`，拉取最新 Release 安装。
-- **本地安装（开发者模式）**：在「设置」开启开发者模式后，可选本地文件夹（含 `manifest.json` 与入口 bundle）安装，用于自测/离线分发。
-- 已安装列表支持**启用 / 禁用 / 更新（GitHub 来源）/ 卸载**。
+- **开发者模式（在「设置」开启后出现两个本地入口，均选插件的 `dist` 文件夹）**：
+  - **🔗 开发者链接（实时调试）**：不复制、直接从外部 `dist/` 加载。改代码 → `npm run dev`（watch）自动重建 → 在 TTool 按 `Ctrl+R` 重载即生效，无需重装。
+  - **＋ 从本地文件夹安装（复制）**：把 `dist/` 复制进 `userData`，模拟正式安装态；改代码需重装。
+- 已安装列表支持**启用 / 禁用 / 更新（GitHub 来源）/ 卸载**（链接插件卸载只解除链接，不删你的开发目录）。
 
-安装后落盘在 `<userData>/plugins/<id>/`，清单持久化在 `<userData>/plugins/registry.json`。
+**调试**：`F12` / `Ctrl+Shift+I` 开发者工具看 Console 报错；`Ctrl+R` / `F5` 重载窗口。
+**`dist/` 必须自包含**（`manifest.json` 与 `tool.js` 同层）——脚手架的 `copyManifest` 构建插件会自动放好；若选了项目根目录安装会报错并提示改选 `dist/`。
+
+复制安装落盘在 `<userData>/plugins/<id>/`；链接插件只在 `<userData>/plugins/registry.json` 记一条指向你开发目录的引用。
 
 ## SDK API（`@maoyugames/ttool-sdk`）
 

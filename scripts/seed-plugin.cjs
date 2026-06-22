@@ -11,8 +11,9 @@ app.whenReady().then(() => {
   const dir = path.join(pluginsRoot, 'hello')
   fs.mkdirSync(dir, { recursive: true })
   const root = path.join(__dirname, '..')
-  fs.copyFileSync(path.join(root, 'examples/hello-tool/dist/tool.js'), path.join(dir, 'tool.js'))
-  fs.copyFileSync(path.join(root, 'examples/hello-tool/manifest.json'), path.join(dir, 'manifest.json'))
+  // 从自包含的 dist/（构建已把 manifest.json 复制进去）整目录拷入，镜像真实安装布局
+  const distDir = path.join(root, 'examples/hello-tool/dist')
+  for (const f of fs.readdirSync(distDir)) fs.copyFileSync(path.join(distDir, f), path.join(dir, f))
   const idxFile = path.join(pluginsRoot, 'registry.json')
   let idx = {}
   try {

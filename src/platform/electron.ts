@@ -51,6 +51,7 @@ export function createElectronPlatform(bridge: NonNullable<Window['ttool']>): Pl
       list: () => bridge.plugins.list() as Promise<InstalledPlugin[]>,
       installGithub: (repo, tag) => bridge.plugins.installGithub(repo, tag) as Promise<InstallResult>,
       installLocal: () => bridge.plugins.installLocal() as Promise<InstallResult>,
+      installLocalLink: () => bridge.plugins.installLocalLink() as Promise<InstallResult>,
       remove: (id) => bridge.plugins.remove(id),
       setEnabled: (id, enabled) => bridge.plugins.setEnabled(id, enabled),
       update: (id) => bridge.plugins.update(id) as Promise<InstallResult>,

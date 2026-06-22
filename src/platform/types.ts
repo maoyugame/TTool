@@ -17,7 +17,11 @@ export interface PickAppResult {
   path?: string
 }
 
-export type PluginSource = { type: 'github'; repo: string; tag: string | null } | { type: 'local'; path: string } | null
+export type PluginSource =
+  | { type: 'github'; repo: string; tag: string | null }
+  | { type: 'local'; path: string }
+  | { type: 'local-link'; path: string }
+  | null
 
 export interface InstalledPlugin {
   manifest: PluginManifest
@@ -38,6 +42,8 @@ export interface PluginApi {
   list(): Promise<InstalledPlugin[]>
   installGithub(repo: string, tag?: string): Promise<InstallResult>
   installLocal(): Promise<InstallResult>
+  /** 开发者链接：直接从外部 dist 目录加载，改代码重新构建+重载即生效（不复制） */
+  installLocalLink(): Promise<InstallResult>
   remove(id: string): Promise<void>
   setEnabled(id: string, enabled: boolean): Promise<void>
   update(id: string): Promise<InstallResult>
