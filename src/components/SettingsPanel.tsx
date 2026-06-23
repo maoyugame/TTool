@@ -100,7 +100,7 @@ export function SettingsPanel() {
           <ShortcutRow keys={kbd('K')} desc="聚焦搜索 / 回到启动台" />
           <ShortcutRow keys={kbd('W')} desc="关闭当前标签" />
           <ShortcutRow keys="Esc" desc="返回启动台" />
-          {platform.isDesktop && <ShortcutRow keys="Alt + Space" desc="全局唤起快速启动器小窗" />}
+          {platform.isDesktop && <ShortcutRow keys="Alt + Space / Ctrl+Alt+Space" desc="全局唤起快速启动器小窗" />}
         </div>
 
         {/* 开发者 */}

@@ -316,9 +316,19 @@ app.whenReady().then(() => {
   host = setupHost({ ipcMain, app, getWin: () => win })
   createWindow()
   createLauncher() // 预创建启动器小窗（隐藏），首次唤起即时
-  // 注册全局热键 Alt+Space：切换快速启动器小窗（显隐）
-  const ok = globalShortcut.register('Alt+Space', toggleLauncher)
-  if (!ok) console.warn('[ttool] 全局热键 Alt+Space 注册失败（可能被其它程序占用）')
+  // 注册全局热键切换快速启动器小窗：首选 Alt+Space，并叠加一个不易被输入法占用的备用键。
+  // Alt+Space 常被输入法/其它软件抢占（注册时灵时不灵），故同时注册 Ctrl+Alt+Space 兜底。
+  const HOTKEYS = ['Alt+Space', 'Control+Alt+Space']
+  const registered = []
+  for (const hk of HOTKEYS) {
+    try {
+      if (globalShortcut.register(hk, toggleLauncher)) registered.push(hk)
+    } catch {
+      /* ignore */
+    }
+  }
+  if (registered.length) console.log('[ttool] 快速启动器全局热键已注册：' + registered.join('、'))
+  else console.warn('[ttool] 全局热键全部注册失败（可能被其它程序占用），可在任务栏图标或主窗内唤起')
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
