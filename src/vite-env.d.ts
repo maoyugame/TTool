@@ -11,8 +11,20 @@ interface TToolBridge {
   windowToggleMaximize: () => Promise<void>
   windowClose: () => Promise<void>
   translate: (text: string, from: string, to: string) => Promise<string>
+  mode: 'main' | 'launcher'
   onSummon: (cb: () => void) => () => void
   onWindowFocus: (cb: () => void) => () => void
+  onOpenTool: (cb: (id: string) => void) => () => void
+  launcher: {
+    hide: () => Promise<boolean>
+    openTool: (id: string) => Promise<boolean>
+    resize: (height: number) => Promise<boolean>
+  }
+  files: {
+    search: (query: string) => Promise<{ path: string; name: string }[]>
+    open: (path: string) => Promise<{ ok: boolean; error?: string }>
+    reveal: (path: string) => Promise<boolean>
+  }
   plugins: {
     list: () => Promise<unknown[]>
     installGithub: (repo: string, tag?: string) => Promise<unknown>

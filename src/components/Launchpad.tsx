@@ -3,6 +3,7 @@ import { useToolbox } from '../store/toolbox'
 import { usePersistentState } from '../store/persistentState'
 import { platform } from '../platform'
 import { kbd } from '../platform/shortcuts'
+import { isFileSearchOn, useFileSearch, isExecutableFile } from '../store/fileSearch'
 import { getTool, toolCount, filterNames, queryTools } from '../tools/registry'
 import type { HueName } from '../tools/hue'
 import { MONO } from '../tools/ui'
@@ -62,6 +63,10 @@ export function Launchpad() {
   const q = query.trim().toLowerCase()
   const isAppsFilter = filter === '应用'
 
+  // 本机文件搜索（开关在设置/启动器；开启后搜索框同时搜本机文件）
+  const fileOn = isFileSearchOn()
+  const { hits: fileHits, loading: filesLoading } = useFileSearch(query, fileOn && !isAppsFilter)
+
   async function addAppFlow() {
     if (!platform.isDesktop) {
       flash('桌面版可添加本地应用')
@@ -106,13 +111,32 @@ export function Launchpad() {
       delay: delayOf(i),
       onOpen: () => openTool(t.id),
     }))
+    // 文件结果接在工具结果之后（仅在有查询且开了文件搜索时）
+    if (q && fileOn) {
+      const base = homeTools.length
+      for (let i = 0; i < fileHits.length; i++) {
+        const f = fileHits[i]
+        const exec = isExecutableFile(f.name)
+        homeTools.push({
+          key: 'file:' + f.path,
+          name: f.name,
+          desc: f.path,
+          glyph: exec ? '⚙️' : '📄',
+          hue: 'gray',
+          cat: exec ? '可执行 ↗' : '文件 ↗',
+          pillColor: exec ? '#d9803a' : 'var(--accent)',
+          delay: delayOf(base + i),
+          onOpen: () => { void platform.openPath?.(f.path) },
+        })
+      }
+    }
   }
 
   const recentChips = recents.map((id) => getTool(id)).filter((t): t is NonNullable<typeof t> => !!t)
   const showRecents = !q && !isAppsFilter && recentChips.length > 0
   const listLabel = q ? '搜索结果' : filter === '全部' ? '全部工具' : isAppsFilter ? '我的应用' : filter
   const appsEmpty = isAppsFilter && !q && apps.length === 0
-  const noResults = !isAppsFilter && homeTools.length === 0
+  const noResults = !isAppsFilter && homeTools.length === 0 && !filesLoading
 
   return (
     <div style={{ height: '100%', display: 'flex', justifyContent: 'center', animation: 'fadeIn .3s both' }}>
@@ -199,7 +223,12 @@ export function Launchpad() {
             </div>
           )}
           {noResults && (
-            <div style={{ textAlign: 'center', padding: 40, color: 'var(--text3)', fontSize: 14 }}>没有匹配「{query}」的工具</div>
+            <div style={{ textAlign: 'center', padding: 40, color: 'var(--text3)', fontSize: 14 }}>
+              没有匹配「{query}」的{fileOn ? '工具或文件' : '工具'}
+            </div>
+          )}
+          {q && fileOn && filesLoading && homeTools.length === 0 && (
+            <div style={{ textAlign: 'center', padding: 40, color: 'var(--text3)', fontSize: 14 }}>搜索本机文件中…</div>
           )}
         </div>
 

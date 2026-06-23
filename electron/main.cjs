@@ -1,11 +1,12 @@
 // Electron 主进程：创建无边框毛玻璃窗口，并通过 IPC 暴露桌面能力
 // （剪贴板、打开第三方应用、选择应用路径、窗口控制）。
 // 设计为可选壳层——核心 React 应用在浏览器中也能独立运行（见 src/platform）。
-const { app, BrowserWindow, ipcMain, clipboard, shell, dialog, globalShortcut } = require('electron')
+const { app, BrowserWindow, ipcMain, clipboard, shell, dialog, globalShortcut, screen } = require('electron')
 const path = require('node:path')
 const { spawn } = require('node:child_process')
 const { setupPlugins } = require('./plugins.cjs')
 const { setupHost } = require('./host/index.cjs')
+const { searchFiles } = require('./filesearch.cjs')
 
 // 固定应用名，确保 userData（插件目录）路径稳定一致（dev 下默认会变成 "Electron"）。
 app.setName('ttool')
@@ -13,6 +14,9 @@ app.setName('ttool')
 const DEV_URL = process.env.TOOLBOX_DEV_URL
 let win = null
 let host = null // 宿主能力（net / storage / secrets），whenReady 后初始化
+let launcher = null // 快速启动器小窗（Spotlight 式悬浮窗）
+const LAUNCHER_W = 720
+let launcherHeight = 72 // 渲染层按内容动态上报；初始仅搜索栏高度
 
 // 翻译（主进程 fetch，免 CORS）。与 src/platform/translateApi.ts 逻辑保持一致。
 const TR_LANG = { zh: 'zh-CN', en: 'en', ja: 'ja', ko: 'ko', fr: 'fr' }
@@ -35,6 +39,15 @@ async function translateText(text, from, to) {
   } finally {
     clearTimeout(timer)
   }
+}
+
+// 纵深防御（两个窗口共用）：禁止页面/插件开新窗口或把应用导航离开（外链交系统浏览器）。
+function hardenWebContents(wc) {
+  wc.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/.test(url)) shell.openExternal(url)
+    return { action: 'deny' }
+  })
+  wc.on('will-navigate', (e) => e.preventDefault())
 }
 
 function createWindow() {
@@ -70,11 +83,7 @@ function createWindow() {
   win.once('ready-to-show', () => win.show())
 
   // 纵深防御：禁止插件/页面打开新窗口或把应用导航离开（外链交由系统浏览器）
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/.test(url)) shell.openExternal(url)
-    return { action: 'deny' }
-  })
-  win.webContents.on('will-navigate', (e) => e.preventDefault())
+  hardenWebContents(win.webContents)
 
   // 窗口获得焦点 → 通知渲染层（用于自动聚焦搜索框）
   win.on('focus', () => win.webContents.send('ttool:window-focus'))
@@ -107,6 +116,8 @@ function createWindow() {
 
   win.on('closed', () => {
     win = null
+    // 主窗关闭后销毁常驻的启动器小窗，确保 window-all-closed 能触发应用退出（非 mac）
+    if (launcher && !launcher.isDestroyed()) launcher.destroy()
   })
 }
 
@@ -153,21 +164,143 @@ ipcMain.handle('translate', async (_e, { text, from, to }) => {
   return translateText(String(text ?? ''), from, to)
 })
 
-// 全局唤醒：把窗口带到前台并通知渲染层聚焦搜索框 + 回到启动台
-function summon() {
-  if (!win) {
-    createWindow()
-    // 新建窗口需等渲染层加载并订阅后再补发唤醒信号
-    win.webContents.once('did-finish-load', () => {
-      if (win) win.webContents.send('ttool:summon')
-    })
+// ---- 快速启动器小窗（Spotlight 式）：无边框 / 透明 / 置顶 / 不占任务栏 / 动态高度 ----
+const LAUNCHER_INIT_H = 72 // 仅搜索栏的初始高度
+let launcherReady = false // 渲染层是否已加载完（可安全收到 ttool:summon）
+function createLauncher() {
+  launcher = new BrowserWindow({
+    width: LAUNCHER_W,
+    height: launcherHeight,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    hasShadow: true,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  })
+  launcher.setAlwaysOnTop(true, 'screen-saver')
+  hardenWebContents(launcher.webContents) // 与主窗一致的导航/开窗防护
+  launcherReady = false
+  launcher.webContents.once('did-finish-load', () => {
+    launcherReady = true
+  })
+  if (DEV_URL) launcher.loadURL(DEV_URL + '#launcher')
+  else launcher.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), { hash: 'launcher' })
+  // 失焦即隐藏（点别处/切到别的应用），符合启动器直觉
+  launcher.on('blur', () => {
+    if (launcher && launcher.isVisible()) launcher.hide()
+  })
+  launcher.on('closed', () => {
+    launcher = null
+    launcherReady = false
+  })
+}
+
+// 通知小窗渲染层重置查询/同步主题/聚焦；渲染层未就绪时等加载完再发，避免信号丢失
+function sendLauncherSummon() {
+  if (!launcher) return
+  if (launcherReady) launcher.webContents.send('ttool:summon')
+  else launcher.webContents.once('did-finish-load', () => launcher && launcher.webContents.send('ttool:summon'))
+}
+
+// 把小窗摆在当前鼠标所在屏幕的水平居中、偏上位置
+function positionLauncher() {
+  if (!launcher) return
+  const cursor = screen.getCursorScreenPoint()
+  const disp = screen.getDisplayNearestPoint(cursor)
+  const wa = disp.workArea
+  const x = Math.round(wa.x + (wa.width - LAUNCHER_W) / 2)
+  const y = Math.round(wa.y + wa.height * 0.16)
+  launcher.setBounds({ x, y, width: LAUNCHER_W, height: launcherHeight })
+}
+
+function toggleLauncher() {
+  if (!launcher) createLauncher()
+  if (launcher.isVisible()) {
+    launcher.hide()
     return
   }
+  launcherHeight = LAUNCHER_INIT_H // 先收回初始高度，避免残留上次的大高度先撑开再回缩的闪动
+  positionLauncher()
+  launcher.show()
+  // Windows 前台锁定下普通 focus 可能抢不到键盘焦点：用 app.focus(steal) + moveTop 兜底
+  try { app.focus({ steal: true }) } catch { /* ignore */ }
+  launcher.moveTop()
+  launcher.focus()
+  sendLauncherSummon() // 通知渲染层重置查询并聚焦搜索框（就绪后才发）
+}
+
+// ---- IPC：快速启动器 ----
+ipcMain.handle('launcher:hide', () => {
+  if (launcher) launcher.hide()
+  return true
+})
+// 渲染层按内容上报高度 → 调整小窗高度并保持顶部位置不变
+ipcMain.handle('launcher:resize', (_e, { height }) => {
+  const h = Math.max(64, Math.min(560, Math.round(Number(height) || 72)))
+  launcherHeight = h
+  if (launcher && launcher.isVisible()) {
+    const b = launcher.getBounds()
+    launcher.setBounds({ x: b.x, y: b.y, width: LAUNCHER_W, height: h })
+  }
+  return true
+})
+// 在小窗里选中工具 → 把主窗口带到前台并打开该工具，隐藏小窗
+ipcMain.handle('launcher:openTool', (_e, { id }) => {
+  if (!win) createWindow()
   if (win.isMinimized()) win.restore()
   win.show()
   win.focus()
-  win.webContents.send('ttool:summon')
-}
+  const send = () => win && win.webContents.send('ttool:open-tool', String(id || ''))
+  if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send)
+  else send()
+  if (launcher) launcher.hide()
+  return true
+})
+
+// ---- IPC：本机文件搜索 / 打开 ----
+ipcMain.handle('files:search', async (_e, { query }) => {
+  try {
+    return await searchFiles(query)
+  } catch {
+    return []
+  }
+})
+// 可执行扩展名：直接 openPath 会执行而非"用默认程序打开文档"，命中时弹窗二次确认
+const EXEC_EXT = new Set(['.exe', '.com', '.bat', '.cmd', '.ps1', '.msi', '.scr', '.lnk', '.vbs', '.js', '.jar', '.reg', '.hta', '.cpl', '.wsf', '.pif', '.application'])
+ipcMain.handle('files:open', async (_e, { path: p }) => {
+  const fp = String(p || '')
+  if (EXEC_EXT.has(path.extname(fp).toLowerCase())) {
+    const { response } = await dialog.showMessageBox(win || undefined, {
+      type: 'warning',
+      buttons: ['取消', '仍要运行'],
+      defaultId: 0,
+      cancelId: 0,
+      title: '运行可执行文件',
+      message: '这是一个可执行文件，运行它可能有风险。确认运行？',
+      detail: fp,
+    })
+    if (response !== 1) return { ok: false, error: '已取消' }
+  }
+  const err = await shell.openPath(fp)
+  return { ok: !err, error: err || undefined }
+})
+ipcMain.handle('files:reveal', (_e, { path: p }) => {
+  shell.showItemInFolder(String(p || ''))
+  return true
+})
 
 // ---- IPC：窗口控制（自定义标题栏的红黄绿按钮） ----
 ipcMain.handle('win:minimize', () => win && win.minimize())
@@ -182,8 +315,9 @@ app.whenReady().then(() => {
   // 宿主能力：通用 net（TCP/TLS）+ 按插件命名空间的 storage + safeStorage 加密 secrets
   host = setupHost({ ipcMain, app, getWin: () => win })
   createWindow()
-  // 注册全局唤醒热键 Alt+Space
-  const ok = globalShortcut.register('Alt+Space', summon)
+  createLauncher() // 预创建启动器小窗（隐藏），首次唤起即时
+  // 注册全局热键 Alt+Space：切换快速启动器小窗（显隐）
+  const ok = globalShortcut.register('Alt+Space', toggleLauncher)
   if (!ok) console.warn('[ttool] 全局热键 Alt+Space 注册失败（可能被其它程序占用）')
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

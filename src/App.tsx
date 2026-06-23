@@ -88,7 +88,7 @@ function Content() {
 
 function Shell() {
   const { theme } = useTheme()
-  const { view, settingsOpen, extensionsOpen, setView, closeTab, closeSettings, closeExtensions, focusSearch, goHomeAndFocusSearch, bumpTools } = useToolbox()
+  const { view, settingsOpen, extensionsOpen, setView, openTool, closeTab, closeSettings, closeExtensions, focusSearch, goHomeAndFocusSearch, bumpTools } = useToolbox()
   const [, setLoadedTick] = useState(0)
 
   // 启动加载已装插件（仅桌面有 platform.plugins）
@@ -160,6 +160,14 @@ function Shell() {
       offFocus?.()
     }
   }, [focusSearch, goHomeAndFocusSearch])
+
+  // 桌面：快速启动器小窗请求打开某工具
+  useEffect(() => {
+    const off = platform.onOpenTool?.((id) => {
+      if (getTool(id)) openTool(id) // 已注册（内置/已装插件）→ 打开（加标签+最近）
+    })
+    return () => off?.()
+  }, [openTool])
 
   return (
     <div

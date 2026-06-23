@@ -1,8 +1,21 @@
+import { useState } from 'react'
 import { useTheme } from '../theme/ThemeContext'
 import { useToolbox } from '../store/toolbox'
 import { platform } from '../platform'
 import { kbd } from '../platform/shortcuts'
 import { toolCount } from '../tools/registry'
+import { isFileSearchOn, setFileSearchOn } from '../store/fileSearch'
+
+function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
+  return (
+    <span
+      onClick={onClick}
+      style={{ width: 42, height: 24, borderRadius: 12, background: on ? 'var(--accent)' : 'var(--pill)', position: 'relative', cursor: 'pointer', transition: 'background .18s', flexShrink: 0 }}
+    >
+      <span style={{ position: 'absolute', top: 2, left: on ? 20 : 2, width: 20, height: 20, borderRadius: '50%', background: '#fff', transition: 'left .18s', boxShadow: '0 1px 3px rgba(0,0,0,.3)' }} />
+    </span>
+  )
+}
 
 const rowStyle = {
   display: 'flex',
@@ -28,6 +41,7 @@ function ShortcutRow({ keys, desc }: { keys: string; desc: string }) {
 export function SettingsPanel() {
   const { settingsOpen, closeSettings, devMode, setDevMode } = useToolbox()
   const { theme, setTheme } = useTheme()
+  const [fileSearch, setFileSearch] = useState(isFileSearchOn())
   if (!settingsOpen) return null
 
   const seg = (val: 'dark' | 'light', label: string) => {
@@ -66,13 +80,27 @@ export function SettingsPanel() {
           </div>
         </div>
 
+        {/* 搜索（仅桌面：本机文件搜索走系统索引） */}
+        {platform.isDesktop && platform.searchFiles && (
+          <>
+            <div style={{ fontSize: 11.5, fontWeight: 680, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 10 }}>搜索</div>
+            <div style={{ ...rowStyle, marginBottom: 22 }}>
+              <div>
+                <div style={{ fontSize: 13.5, color: 'var(--text)' }}>搜索本机文件</div>
+                <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>开启后，搜索框（含 Alt+Space 启动器）会同时搜索本机文件（系统索引）。默认仅搜工具。</div>
+              </div>
+              <Toggle on={fileSearch} onClick={() => { const v = !fileSearch; setFileSearch(v); setFileSearchOn(v) }} />
+            </div>
+          </>
+        )}
+
         {/* 快捷键 */}
         <div style={{ fontSize: 11.5, fontWeight: 680, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 10 }}>快捷键</div>
         <div style={{ padding: '4px 12px', borderRadius: 12, background: 'var(--surface2)', border: '1px solid var(--hair)', marginBottom: 22 }}>
           <ShortcutRow keys={kbd('K')} desc="聚焦搜索 / 回到启动台" />
           <ShortcutRow keys={kbd('W')} desc="关闭当前标签" />
           <ShortcutRow keys="Esc" desc="返回启动台" />
-          {platform.isDesktop && <ShortcutRow keys="Alt + Space" desc="全局唤醒（任意处呼出）" />}
+          {platform.isDesktop && <ShortcutRow keys="Alt + Space" desc="全局唤起快速启动器小窗" />}
         </div>
 
         {/* 开发者 */}

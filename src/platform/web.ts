@@ -5,6 +5,7 @@ import { translateViaMyMemory } from './translateApi'
 export const webPlatform: Platform = {
   kind: 'web',
   isDesktop: false,
+  mode: 'main', // web 无独立启动器小窗
 
   async copyText(text: string) {
     try {

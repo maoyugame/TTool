@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld('ttool', {
   windowToggleMaximize: () => ipcRenderer.invoke('win:toggleMaximize'),
   windowClose: () => ipcRenderer.invoke('win:close'),
   translate: (text, from, to) => ipcRenderer.invoke('translate', { text, from, to }),
+  // 当前窗口模式：主窗 or 快速启动器小窗（按 URL hash 区分）
+  mode: location.hash === '#launcher' ? 'launcher' : 'main',
   // 事件订阅：返回取消订阅函数
   onSummon: (cb) => {
     const h = () => cb()
@@ -23,6 +25,24 @@ contextBridge.exposeInMainWorld('ttool', {
     const h = () => cb()
     ipcRenderer.on('ttool:window-focus', h)
     return () => ipcRenderer.removeListener('ttool:window-focus', h)
+  },
+  // 主窗订阅：启动器小窗请求打开某工具
+  onOpenTool: (cb) => {
+    const h = (_e, id) => cb(id)
+    ipcRenderer.on('ttool:open-tool', h)
+    return () => ipcRenderer.removeListener('ttool:open-tool', h)
+  },
+  // 快速启动器路由（小窗用）
+  launcher: {
+    hide: () => ipcRenderer.invoke('launcher:hide'),
+    openTool: (id) => ipcRenderer.invoke('launcher:openTool', { id }),
+    resize: (height) => ipcRenderer.invoke('launcher:resize', { height }),
+  },
+  // 本机文件搜索 / 打开
+  files: {
+    search: (query) => ipcRenderer.invoke('files:search', { query }),
+    open: (path) => ipcRenderer.invoke('files:open', { path }),
+    reveal: (path) => ipcRenderer.invoke('files:reveal', { path }),
   },
   // 插件管理
   plugins: {

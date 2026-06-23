@@ -236,4 +236,34 @@ export interface Platform {
 
   /** 数据库便利层（仅桌面，且需宿主已实现对应适配器；未接入时为 undefined）。 */
   db?: DbApi
+
+  /** 当前窗口模式：主窗 'main' 或快速启动器小窗 'launcher'。web 下恒为 'main'。 */
+  readonly mode: 'main' | 'launcher'
+
+  /** 本机文件搜索（仅桌面，走 OS 系统索引）。web 下为 undefined。 */
+  searchFiles?: (query: string) => Promise<FileHit[]>
+  /** 用默认程序打开文件/文件夹（仅桌面）。 */
+  openPath?: (path: string) => Promise<AppOpenResult>
+  /** 在文件管理器中显示并选中该文件（仅桌面）。 */
+  revealPath?: (path: string) => Promise<void>
+
+  /** 快速启动器小窗路由（仅在 launcher 小窗内可用）。 */
+  launcher?: LauncherApi
+
+  /** 主窗订阅：启动器小窗请求打开某工具。返回取消订阅函数（仅桌面主窗）。 */
+  onOpenTool?: (cb: (id: string) => void) => () => void
+}
+
+export interface FileHit {
+  path: string
+  name: string
+}
+
+export interface LauncherApi {
+  /** 隐藏小窗 */
+  hide(): void
+  /** 在主窗口打开某工具（并隐藏小窗） */
+  openTool(id: string): void
+  /** 按内容高度调整小窗高度（保持顶部位置） */
+  resize(height: number): void
 }
