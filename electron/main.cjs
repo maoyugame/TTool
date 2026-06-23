@@ -165,7 +165,6 @@ ipcMain.handle('translate', async (_e, { text, from, to }) => {
 })
 
 // ---- 快速启动器小窗（Spotlight 式）：无边框 / 透明 / 置顶 / 不占任务栏 / 动态高度 ----
-const LAUNCHER_INIT_H = 72 // 仅搜索栏的初始高度
 let launcherReady = false // 渲染层是否已加载完（可安全收到 ttool:summon）
 function createLauncher() {
   launcher = new BrowserWindow({
@@ -232,13 +231,16 @@ function toggleLauncher() {
     launcher.hide()
     return
   }
-  launcherHeight = LAUNCHER_INIT_H // 先收回初始高度，避免残留上次的大高度先撑开再回缩的闪动
+  // 用上次量好的内容高度直接显示（启动时已按 recents 内容算好）。
+  // 不要在这里把高度重置成 72：召唤空查询时渲染层不一定会重新上报高度，会把窗口卡在 72px、
+  // 下面的最近工具被裁掉，直到用户输入文字才长开——正是「输入后才正常」的成因。
   positionLauncher()
   // 只聚焦 launcher 本身：绝不用 app.focus()——它在 Windows 上聚焦「应用第一个窗口」=主窗，
   // 会把主窗顶到前台（表现为按 Alt+Space 弹出的是主窗而非小窗）。
   launcher.show()
   launcher.moveTop()
   launcher.focus()
+  try { launcher.webContents.invalidate() } catch { /* 强制重绘，规避透明窗显示旧帧 */ }
   sendLauncherSummon() // 通知渲染层重置查询并聚焦搜索框（就绪后才发）
 }
 

@@ -125,11 +125,12 @@ export function QuickLauncher() {
     el?.scrollIntoView({ block: 'nearest' })
   }, [sel])
 
-  // 按内容高度上报，让小窗动态贴合内容
+  // 按内容高度上报，让小窗动态贴合内容。summonNonce 入依赖：每次召唤都重量一次，
+  // 避免「空查询召唤时内容未变 → 不重测 → 窗口卡在旧/初始高度」。
   useLayoutEffect(() => {
     const h = cardRef.current ? Math.ceil(cardRef.current.getBoundingClientRect().height) + 24 : 72
     platform.launcher?.resize(h)
-  }, [items.length, q, fileOn, filesLoading])
+  }, [items.length, q, fileOn, filesLoading, summonNonce])
 
   const showHint = q && fileOn
 
