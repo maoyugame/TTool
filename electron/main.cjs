@@ -234,9 +234,9 @@ function toggleLauncher() {
   }
   launcherHeight = LAUNCHER_INIT_H // 先收回初始高度，避免残留上次的大高度先撑开再回缩的闪动
   positionLauncher()
+  // 只聚焦 launcher 本身：绝不用 app.focus()——它在 Windows 上聚焦「应用第一个窗口」=主窗，
+  // 会把主窗顶到前台（表现为按 Alt+Space 弹出的是主窗而非小窗）。
   launcher.show()
-  // Windows 前台锁定下普通 focus 可能抢不到键盘焦点：用 app.focus(steal) + moveTop 兜底
-  try { app.focus({ steal: true }) } catch { /* ignore */ }
   launcher.moveTop()
   launcher.focus()
   sendLauncherSummon() // 通知渲染层重置查询并聚焦搜索框（就绪后才发）
