@@ -240,8 +240,10 @@ export interface Platform {
   /** 当前窗口模式：主窗 'main' 或快速启动器小窗 'launcher'。web 下恒为 'main'。 */
   readonly mode: 'main' | 'launcher'
 
-  /** 本机文件搜索（仅桌面，走 OS 系统索引）。web 下为 undefined。 */
+  /** 本机文件搜索（仅桌面，走 OS 系统索引，快）。web 下为 undefined。 */
   searchFiles?: (query: string) => Promise<FileHit[]>
+  /** 深度扫描其它固定硬盘（Windows 上扫非 C 盘，较慢；mac/linux 已被 searchFiles 覆盖返回空）。 */
+  searchFilesDeep?: (query: string) => Promise<FileHit[]>
   /** 用默认程序打开文件/文件夹（仅桌面）。 */
   openPath?: (path: string) => Promise<AppOpenResult>
   /** 在文件管理器中显示并选中该文件（仅桌面）。 */

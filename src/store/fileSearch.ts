@@ -45,22 +45,22 @@ export function useFileSearch(query: string, enabled: boolean): { hits: FileHit[
     }
     const my = ++seq.current
     setLoading(true)
+    const arr = (r: unknown): FileHit[] => (Array.isArray(r) ? (r as FileHit[]) : [])
+    // 索引(快，覆盖 C 盘/已索引位置)与深度扫描(慢，其它固定盘)并行；各自返回即合并重排，
+    // 实现「C 盘即时出结果、其它盘稍后补入」。两者都受 seq 守卫，过期响应丢弃。
+    let base: FileHit[] = []
+    let more: FileHit[] = []
+    const apply = () => {
+      if (my === seq.current) setHits(rankFiles([...base, ...more], q, 20))
+    }
     const timer = setTimeout(() => {
-      platform
-        .searchFiles!(q)
-        .then((r) => {
-          if (my === seq.current) {
-            // 按相关性重排 OS 返回的候选（OS 默认按修改时间，命中质量参差）
-            setHits(rankFiles(Array.isArray(r) ? r : [], q, 20))
-            setLoading(false)
-          }
-        })
-        .catch(() => {
-          if (my === seq.current) {
-            setHits([])
-            setLoading(false)
-          }
-        })
+      const tasks: Promise<unknown>[] = [
+        platform.searchFiles!(q).then((r) => { if (my === seq.current) { base = arr(r); apply() } }).catch(() => {}),
+      ]
+      if (platform.searchFilesDeep) {
+        tasks.push(platform.searchFilesDeep(q).then((r) => { if (my === seq.current) { more = arr(r); apply() } }).catch(() => {}))
+      }
+      Promise.allSettled(tasks).then(() => { if (my === seq.current) setLoading(false) })
     }, 250)
     return () => clearTimeout(timer)
   }, [query, enabled])

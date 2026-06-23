@@ -6,7 +6,7 @@ const path = require('node:path')
 const { spawn } = require('node:child_process')
 const { setupPlugins } = require('./plugins.cjs')
 const { setupHost } = require('./host/index.cjs')
-const { searchFiles } = require('./filesearch.cjs')
+const { searchFiles, searchDeep } = require('./filesearch.cjs')
 
 // 固定应用名，确保 userData（插件目录）路径稳定一致（dev 下默认会变成 "Electron"）。
 app.setName('ttool')
@@ -276,6 +276,14 @@ ipcMain.handle('launcher:openTool', (_e, { id }) => {
 ipcMain.handle('files:search', async (_e, { query }) => {
   try {
     return await searchFiles(query)
+  } catch {
+    return []
+  }
+})
+// 深度扫描其它固定硬盘（较慢，渲染层与索引结果并行调用、稍后合并）
+ipcMain.handle('files:searchDeep', async (_e, { query }) => {
+  try {
+    return await searchDeep(query)
   } catch {
     return []
   }

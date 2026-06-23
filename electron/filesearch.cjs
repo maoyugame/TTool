@@ -77,6 +77,80 @@ function parse(out) {
   return res
 }
 
+// 取原始 stdout 文本（用于枚举硬盘）。
+function runText(cmd, args) {
+  return new Promise((resolve) => {
+    let child
+    try {
+      child = spawn(cmd, args, { windowsHide: true })
+    } catch {
+      resolve('')
+      return
+    }
+    let out = ''
+    const timer = setTimeout(() => { try { child.kill() } catch { /* ignore */ } resolve(out) }, TIMEOUT)
+    child.stdout.setEncoding('utf8')
+    child.stdout.on('data', (d) => (out += d))
+    child.on('error', () => { clearTimeout(timer); resolve('') })
+    child.on('close', () => { clearTimeout(timer); resolve(out) })
+  })
+}
+
+// 枚举「固定硬盘」盘符（DriveType=Fixed），排除 C:（C 盘由 Windows 索引覆盖）。缓存一次。
+let deepDrivesCache = null
+async function getDeepDrives() {
+  if (deepDrivesCache) return deepDrivesCache
+  try {
+    const out = await runText('powershell.exe', [
+      '-NoProfile', '-NonInteractive', '-Command',
+      "[System.IO.DriveInfo]::GetDrives() | Where-Object { $_.DriveType -eq 'Fixed' -and $_.IsReady } | ForEach-Object { $_.Name }",
+    ])
+    deepDrivesCache = out
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter((d) => /^[A-Za-z]:\\$/.test(d) && d[0].toUpperCase() !== 'C')
+  } catch {
+    deepDrivesCache = []
+  }
+  return deepDrivesCache
+}
+
+// 深度扫描查询字符串清洗：仅留字母/数字/CJK/空格/._-，杜绝注入与 -Filter 通配符干扰。
+const safeQ = (q) => String(q || '').replace(/[^\p{L}\p{N} ._-]/gu, '').trim()
+
+// 深度扫描 PS 脚本：递归列出某盘下「名字匹配」的文件与文件夹（Get-ChildItem -Filter 同时匹配两者）。
+// q / 盘符经环境变量传入（免转义、防注入）；UTF-8 输出保中文路径；SilentlyContinue 跳过无权限目录。
+const DEEP_PS = `
+$ErrorActionPreference='SilentlyContinue'
+[Console]::OutputEncoding=[System.Text.Encoding]::UTF8
+$q=$env:TTOOL_Q; $d=$env:TTOOL_DRIVE
+if([string]::IsNullOrWhiteSpace($q) -or [string]::IsNullOrWhiteSpace($d)){ exit 0 }
+Get-ChildItem -LiteralPath $d -Recurse -ErrorAction SilentlyContinue -Filter ("*"+$q+"*") | Select-Object -First ${MAX} | ForEach-Object { [Console]::Out.WriteLine($_.FullName) }
+`
+
+// 深度扫描：Windows 上对「非 C 固定盘」递归搜索名字匹配的文件与文件夹（较慢，与索引并行）。
+// mac/linux 的 mdfind/locate 已覆盖全盘，返回空。
+async function searchDeep(query) {
+  if (process.platform !== 'win32') return []
+  const q = safeQ(query)
+  if (q.length < 2) return []
+  const drives = await getDeepDrives()
+  if (!drives.length) return []
+  const scans = drives.map((d) =>
+    run('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', DEEP_PS], { TTOOL_Q: q, TTOOL_DRIVE: d })
+  )
+  const all = (await Promise.all(scans)).flat()
+  // 跨盘去重
+  const seen = new Set()
+  const res = []
+  for (const h of all) {
+    if (!h || seen.has(h.path)) continue
+    seen.add(h.path)
+    res.push(h)
+  }
+  return res
+}
+
 async function searchFiles(query) {
   const q = String(query || '').trim()
   if (q.length < 2) return [] // 太短不搜，避免海量结果
@@ -94,4 +168,4 @@ async function searchFiles(query) {
   return r
 }
 
-module.exports = { searchFiles }
+module.exports = { searchFiles, searchDeep }

@@ -22,6 +22,7 @@ interface TToolBridge {
   }
   files: {
     search: (query: string) => Promise<{ path: string; name: string }[]>
+    searchDeep: (query: string) => Promise<{ path: string; name: string }[]>
     open: (path: string) => Promise<{ ok: boolean; error?: string }>
     reveal: (path: string) => Promise<boolean>
   }

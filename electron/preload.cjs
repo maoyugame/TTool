@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld('ttool', {
   // 本机文件搜索 / 打开
   files: {
     search: (query) => ipcRenderer.invoke('files:search', { query }),
+    searchDeep: (query) => ipcRenderer.invoke('files:searchDeep', { query }),
     open: (path) => ipcRenderer.invoke('files:open', { path }),
     reveal: (path) => ipcRenderer.invoke('files:reveal', { path }),
   },

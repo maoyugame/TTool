@@ -68,6 +68,7 @@ export function createElectronPlatform(bridge: NonNullable<Window['ttool']>): Pl
     // 窗口模式 + 本机文件搜索/打开 + 启动器路由
     mode: bridge.mode,
     searchFiles: (query) => bridge.files.search(query),
+    searchFilesDeep: (query) => bridge.files.searchDeep(query),
     openPath: (p) => bridge.files.open(p),
     revealPath: (p) => bridge.files.reveal(p).then(() => {}),
     launcher: bridge.launcher,
