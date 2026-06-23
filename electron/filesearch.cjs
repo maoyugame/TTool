@@ -6,7 +6,9 @@
 const { spawn } = require('node:child_process')
 const path = require('node:path')
 
-const MAX = 40
+// 多取候选给渲染层排序用：OS 索引只能按修改时间返回前 N，取多些才能让最佳命名匹配进入候选池，
+// 再由 src/store/fileRank.ts 按相关性重排、截断展示。
+const MAX = 150
 const TIMEOUT = 5000
 
 // Windows Search：PS 脚本读 $env:TTOOL_Q，自行转义 LIKE 项，输出每行一个路径（UTF-8）。

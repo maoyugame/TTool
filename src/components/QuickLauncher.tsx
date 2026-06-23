@@ -85,7 +85,7 @@ export function QuickLauncher() {
     const tools = (q ? toolResults : recentTools).map(
       (t): Item => ({ kind: 'tool', id: t.id, name: t.name, desc: t.desc, glyph: t.glyph, hue: t.hue, icon: t.icon })
     )
-    const files: Item[] = q && fileOn ? fileHits.slice(0, 8).map((f) => ({ kind: 'file', path: f.path, name: f.name })) : []
+    const files: Item[] = q && fileOn ? fileHits.slice(0, 8).map((f) => ({ kind: 'file' as const, path: f.path, name: f.name })) : []
     return [...tools, ...files]
   }, [q, toolResults, recentTools, fileHits, fileOn])
 

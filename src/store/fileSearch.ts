@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { platform } from '../platform'
+import { rankFiles } from './fileRank'
 import type { FileHit } from '../platform/types'
 
 // 「搜索本机文件」开关：与快速启动器小窗、设置面板共享同一持久化键。默认关（只搜工具）。
@@ -49,7 +50,8 @@ export function useFileSearch(query: string, enabled: boolean): { hits: FileHit[
         .searchFiles!(q)
         .then((r) => {
           if (my === seq.current) {
-            setHits(Array.isArray(r) ? r : [])
+            // 按相关性重排 OS 返回的候选（OS 默认按修改时间，命中质量参差）
+            setHits(rankFiles(Array.isArray(r) ? r : [], q, 20))
             setLoading(false)
           }
         })
