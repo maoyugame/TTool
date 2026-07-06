@@ -106,6 +106,8 @@
 - **数据库便利层 hooks（自 SDK 1.3.0；卸载自动关闭连接）**：`useMySQL()` / `useRedis()`（RESP2）/ `useMongo()`（EJSON）——`connect(config)` 拿 `connId`，再 `query/command/find/...`。**桌面端已实现并经真实数据库验收**；web 下 `available=false`、调用返回 `NO_DB`，务必先判 `available`。语义见 `HOST-DB-SPEC.md`。
 - `platform`（宿主平台能力的裁剪子集）：`kind` / `isDesktop` / `copyText` / `openExternalApp` / `translate?` / `net?` / `storage?` / `secrets?` / `db?`
 
+> 截图/贴图能力是 TTool 内置工具使用的 first-party Electron bridge，不在 `@maoyugames/ttool-sdk` 的插件可见 `platform` 中暴露。外部插件不要访问 `window.ttool.screenshot` 或依赖宿主内部 bridge。
+
 ## 约束与注意
 
 - **受信任模型**：插件以宿主同等权限运行，只安装你信任的仓库。

@@ -196,7 +196,7 @@ defineTool({ id: 'xxx', name: '我的工具', desc: '一句话描述', glyph: '�
   - `useRedis()` → `{ available, connect(config), command(connId, args[], {binary?}), pipeline(connId, cmds[]), close(connId), ping(connId) }`（RESP2；二进制值用 `binary:true` 取 `Uint8Array`）
   - `useMongo()` → `{ available, connect(config), find/countDocuments/aggregate/distinct/insertOne/insertMany/updateOne/updateMany/replaceOne/deleteOne/deleteMany/listDatabases/listCollections/listIndexes/createIndex/dropIndex/runCommand(connId, …), close(connId), ping(connId) }`（值用 Extended JSON，如 `{$oid}`/`{$date}`）
   - **桌面端已实现并经真实数据库验收**（MySQL/Redis/MongoDB，自 SDK 1.3.0）；**web 下** `available` 为 `false`、调用返回 `{ok:false,code:'NO_DB'}`，**务必先判 `available` 再使用**。统一错误码、类型保真（大整数/DECIMAL/JSON→字符串、BLOB→Uint8Array、Mongo EJSON canonical 保精度）、结果体量封顶等语义见仓库 `HOST-DB-SPEC.md`。
-- **platform**（宿主能力裁剪子集）：`kind` / `isDesktop` / `copyText` / `openExternalApp` / `translate?` / `net?` / `storage?` / `secrets?` / `db?`（后几者为上述 hooks 的底层 API，一般直接用 hooks 即可）。
+- **platform**（宿主能力裁剪子集）：`kind` / `isDesktop` / `copyText` / `openExternalApp` / `translate?` / `net?` / `storage?` / `secrets?` / `db?`（后几者为上述 hooks 的底层 API，一般直接用 hooks 即可）。截图/贴图属于宿主内置工具的 first-party 桌面桥接，不是 SDK API；插件不可依赖 `window.ttool.screenshot` 或其它未列出的宿主内部能力。
 
 配色与排版**一律用 CSS 变量**（自动适配深/浅色）：`var(--text)` / `var(--text2)` / `var(--text3)` / `var(--surface)` / `var(--surface2)` / `var(--hair)` / `var(--hair2)` / `var(--field)` / `var(--fieldHair)` / `var(--accent)` / `var(--accentSoft)` / `var(--good)` / `var(--pill)`。
 
@@ -312,7 +312,7 @@ const [rows, setRows] = usePersistentState<Row[]>('mysql.rows', [])
 4. **`manifest.sdk` 必须声明当前 SDK 主版本 `"1"`**：主版本与宿主不一致会被拒绝加载并告警。
 5. **持久化状态 key 必须以插件 id 前缀**（如 `usePersistentState('<id>.foo', ...)`），避免与其它工具冲突。
 6. **配色/排版用 CSS 变量**，不要硬编码颜色，确保深/浅色自适应。
-7. **只依赖 `@maoyugames/ttool-sdk` 暴露的能力**：不要 `import` electron / node 内置模块、不要访问 `window.ttool`/`window.TToolSDK` 之外的宿主内部；需要系统能力（剪贴板/打开应用/翻译）走 `platform`。
+7. **只依赖 `@maoyugames/ttool-sdk` 暴露的能力**：不要 `import` electron / node 内置模块、不要直接访问 `window.ttool` 或未在 SDK 导出的宿主内部；需要系统能力（剪贴板/打开应用/翻译）走 `platform`。
 8. **受信任模型**：插件以宿主同等权限运行（桌面端）。请勿编写恶意/越权代码；用户安装的是其信任的仓库。
 9. **入口文件名固定 `tool.js`**，`manifest.entry` 与之一致；`entry`/`icon` 不得用 `..` 逃出插件目录（宿主会拒绝）。
 10. **不在顶层执行有副作用的初始化**（全局监听/计时器等）：插件可能被多次加载，副作用应放进组件生命周期内并自行清理。

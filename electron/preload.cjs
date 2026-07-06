@@ -139,4 +139,50 @@ contextBridge.exposeInMainWorld('ttool', {
       ping: (connId) => ipcRenderer.invoke('db:mongo:ping', { connId }),
     },
   },
+  // 截图贴图宿主能力（仅内置工具使用，不进入插件 SDK）。
+  screenshot: {
+    getEnvironment: () => ipcRenderer.invoke('screenshot:environment'),
+    getConfig: () => ipcRenderer.invoke('screenshot:getConfig'),
+    setConfig: (config) => ipcRenderer.invoke('screenshot:setConfig', config),
+    startCapture: (action) => ipcRenderer.invoke('screenshot:startCapture', { action }),
+    consumeCaptures: () => ipcRenderer.invoke('screenshot:consumeCaptures'),
+    ackCapture: (id) => ipcRenderer.invoke('screenshot:ackCapture', { id }),
+    listRecentScreenshots: () => ipcRenderer.invoke('screenshot:listRecentScreenshots'),
+    rememberScreenshot: (dataUrl, options) => ipcRenderer.invoke('screenshot:rememberScreenshot', { dataUrl, options }),
+    deleteRecentScreenshot: (id) => ipcRenderer.invoke('screenshot:deleteRecentScreenshot', { id }),
+    copyImage: (dataUrl) => ipcRenderer.invoke('screenshot:copyImage', { dataUrl }),
+    saveImage: (dataUrl, suggestedName) => ipcRenderer.invoke('screenshot:saveImage', { dataUrl, suggestedName }),
+    listPins: () => ipcRenderer.invoke('screenshot:listPins'),
+    createPin: (dataUrl, options) => ipcRenderer.invoke('screenshot:createPin', { dataUrl, options }),
+    updatePin: (id, dataUrl) => ipcRenderer.invoke('screenshot:updatePin', { id, dataUrl }),
+    focusPin: (id) => ipcRenderer.invoke('screenshot:focusPin', { id }),
+    setPinVisible: (id, visible) => ipcRenderer.invoke('screenshot:setPinVisible', { id, visible }),
+    closePin: (id) => ipcRenderer.invoke('screenshot:closePin', { id }),
+    closeAllPins: () => ipcRenderer.invoke('screenshot:closeAllPins'),
+    annotatePin: (id) => ipcRenderer.invoke('screenshot:annotatePin', { id }),
+    openCaptureToast: (id) => ipcRenderer.invoke('screenshot:openCaptureToast', { id }),
+    closeCaptureToast: (id) => ipcRenderer.invoke('screenshot:closeCaptureToast', { id }),
+    overlaySelect: (payload) => ipcRenderer.invoke('screenshot:overlaySelect', payload),
+    overlayCancel: (payload) => ipcRenderer.invoke('screenshot:overlayCancel', payload),
+    onCapture: (cb) => {
+      const h = (_e, capture) => cb(capture)
+      ipcRenderer.on('screenshot:capture', h)
+      return () => ipcRenderer.removeListener('screenshot:capture', h)
+    },
+    onStatus: (cb) => {
+      const h = (_e, status) => cb(status)
+      ipcRenderer.on('screenshot:status', h)
+      return () => ipcRenderer.removeListener('screenshot:status', h)
+    },
+    onRecentScreenshotsChanged: (cb) => {
+      const h = (_e, items) => cb(items)
+      ipcRenderer.on('screenshot:recents-changed', h)
+      return () => ipcRenderer.removeListener('screenshot:recents-changed', h)
+    },
+    onPinsChanged: (cb) => {
+      const h = (_e, pins) => cb(pins)
+      ipcRenderer.on('screenshot:pins-changed', h)
+      return () => ipcRenderer.removeListener('screenshot:pins-changed', h)
+    },
+  },
 })

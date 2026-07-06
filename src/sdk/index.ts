@@ -284,6 +284,38 @@ export function useMongo() {
   }, [pid, opened])
 }
 
+// SDK 只暴露插件契约内的 platform 字段。宿主内部能力即使存在于应用侧，
+// 也不能通过 TToolSDK.platform 以未声明运行时属性泄漏给外部插件。
+const sdkPlatform = {
+  get kind() {
+    return platform.kind
+  },
+  get isDesktop() {
+    return platform.isDesktop
+  },
+  copyText(text: string) {
+    return platform.copyText(text)
+  },
+  openExternalApp(path: string) {
+    return platform.openExternalApp(path)
+  },
+  get translate() {
+    return platform.translate
+  },
+  get net() {
+    return platform.net
+  },
+  get storage() {
+    return platform.storage
+  },
+  get secrets() {
+    return platform.secrets
+  },
+  get db() {
+    return platform.db
+  },
+}
+
 // 暴露给外部插件的 SDK 表面。保持稳定，新增只增不改。
 export const TToolSDK = {
   version: SDK_VERSION,
@@ -312,7 +344,7 @@ export const TToolSDK = {
   useRedis,
   useMongo,
   // 平台能力（剪贴板 / 打开应用 / 翻译 / net / storage / secrets，已跨运行时降级）
-  platform,
+  platform: sdkPlatform,
   // 配色
   HUE,
   iconBg,

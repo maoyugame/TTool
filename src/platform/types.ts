@@ -37,6 +37,137 @@ export interface InstallResult {
   error?: string
 }
 
+export interface Rect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface ScreenshotShortcutConfig {
+  enabled: boolean
+  screenshot: string
+  screenshotPin: string
+}
+
+export type ScreenshotShortcutKey = 'screenshot' | 'screenshotPin'
+
+export interface ScreenshotShortcutStatus {
+  key: ScreenshotShortcutKey
+  accelerator: string
+  registered: boolean
+  error?: string
+}
+
+export interface ScreenshotConfigResult {
+  ok: boolean
+  config: ScreenshotShortcutConfig
+  statuses: ScreenshotShortcutStatus[]
+  error?: string
+}
+
+export type ScreenshotPermissionStatus = 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown'
+
+export interface ScreenshotDisplayInfo {
+  id: number
+  bounds: Rect
+  workArea: Rect
+  scaleFactor: number
+  primary: boolean
+}
+
+export interface ScreenshotEnvironment {
+  isDesktop: boolean
+  platform: string
+  permission: ScreenshotPermissionStatus
+  displays: ScreenshotDisplayInfo[]
+}
+
+export type ScreenshotCaptureSource = 'screenshot' | 'pin-annotate'
+
+export interface ScreenshotCapture {
+  id: string
+  source: ScreenshotCaptureSource
+  imageDataUrl: string
+  width: number
+  height: number
+  createdAt: number
+  displayId?: number
+  pinId?: string
+}
+
+export interface ScreenshotRecentItem {
+  id: string
+  imageDataUrl: string
+  createdAt: number
+  width: number
+  height: number
+  displayId?: number
+}
+
+export interface ScreenshotPinInfo {
+  id: string
+  imageDataUrl: string
+  createdAt: number
+  width: number
+  height: number
+  visible: boolean
+  displayId?: number
+  opacity?: number
+}
+
+export interface ScreenshotPinOptions {
+  displayId?: number
+  sourceRect?: Rect
+}
+
+export interface ScreenshotRememberOptions {
+  displayId?: number
+}
+
+export interface ImageSaveResult {
+  ok: boolean
+  canceled?: boolean
+  path?: string
+  error?: string
+}
+
+export interface SimpleResult {
+  ok: boolean
+  error?: string
+}
+
+export interface ScreenshotStatusEvent {
+  level: 'info' | 'error'
+  message: string
+}
+
+export interface ScreenshotApi {
+  getEnvironment(): Promise<ScreenshotEnvironment>
+  getConfig(): Promise<ScreenshotConfigResult>
+  setConfig(config: ScreenshotShortcutConfig): Promise<ScreenshotConfigResult>
+  startCapture(action: 'edit' | 'pin'): Promise<SimpleResult>
+  consumeCaptures(): Promise<ScreenshotCapture[]>
+  ackCapture(id: string): Promise<SimpleResult>
+  onCapture(cb: (capture: ScreenshotCapture) => void): () => void
+  onStatus(cb: (status: ScreenshotStatusEvent) => void): () => void
+  listRecentScreenshots(): Promise<ScreenshotRecentItem[]>
+  rememberScreenshot(dataUrl: string, options?: ScreenshotRememberOptions): Promise<SimpleResult & { item?: ScreenshotRecentItem }>
+  deleteRecentScreenshot(id: string): Promise<SimpleResult>
+  onRecentScreenshotsChanged(cb: (items: ScreenshotRecentItem[]) => void): () => void
+  copyImage(dataUrl: string): Promise<SimpleResult>
+  saveImage(dataUrl: string, suggestedName?: string): Promise<ImageSaveResult>
+  listPins(): Promise<ScreenshotPinInfo[]>
+  createPin(dataUrl: string, options?: ScreenshotPinOptions): Promise<SimpleResult & { pin?: ScreenshotPinInfo }>
+  updatePin(id: string, dataUrl: string): Promise<SimpleResult & { pin?: ScreenshotPinInfo }>
+  focusPin(id: string): Promise<SimpleResult>
+  setPinVisible(id: string, visible: boolean): Promise<SimpleResult>
+  closePin(id: string): Promise<SimpleResult>
+  closeAllPins(): Promise<SimpleResult>
+  annotatePin(id: string): Promise<SimpleResult>
+  onPinsChanged(cb: (pins: ScreenshotPinInfo[]) => void): () => void
+}
+
 // 插件管理能力（仅桌面）。
 export interface PluginApi {
   list(): Promise<InstalledPlugin[]>
