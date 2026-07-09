@@ -5,6 +5,9 @@ import { platform } from '../platform'
 import { kbd } from '../platform/shortcuts'
 import { toolCount } from '../tools/registry'
 import { isFileSearchOn, setFileSearchOn } from '../store/fileSearch'
+import packageInfo from '../../package.json'
+
+const APP_VERSION = packageInfo.version
 
 function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
   return (
@@ -124,6 +127,10 @@ export function SettingsPanel() {
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span style={labelMuted}>名称</span>
             <span style={{ fontSize: 13, color: 'var(--text)' }}>TTool</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={labelMuted}>版本</span>
+            <span style={{ fontSize: 13, color: 'var(--text)' }}>v{APP_VERSION}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span style={labelMuted}>工具数量</span>

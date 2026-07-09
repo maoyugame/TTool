@@ -42,7 +42,8 @@
     "productName": "TTool",
     "files": [
       "dist/**/*",
-      "electron/**/*"
+      "electron/**/*",
+      "assets/icon/**/*"
     ],
     "directories": {
       "output": "release"
@@ -51,7 +52,17 @@
       "category": "public.app-category.utilities"
     },
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "assets/icon/app.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "TTool",
+      "installerIcon": "assets/icon/app.ico",
+      "uninstallerIcon": "assets/icon/app.ico"
     },
     "linux": {
       "target": "AppImage",

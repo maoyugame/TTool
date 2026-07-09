@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from 'react'
 import { registerTool } from '../registry'
-import { ToolPage, ToolHeader, Panel, Seg, MONO } from '../ui'
+import { ToolPage, ToolHeader, Panel, MONO } from '../ui'
 import { platform } from '../../platform'
 import { screenshotHost } from '../../platform/screenshot'
 import { useToolbox } from '../../store/toolbox'
+import { normalizeRectLike, rectFromPoints, shapeFromDrag, type Point, type Rect } from './screenshotPinGeometry'
 import type {
   ScreenshotCapture,
   ScreenshotEnvironment,
@@ -24,8 +25,6 @@ const TOOL_ID = 'screenshot-pin'
 const RESERVED = new Set(['Alt+Space', 'Control+Alt+Space'].map(shortcutId))
 
 type AnnotationTool = 'select' | 'arrow' | 'rect' | 'circle' | 'brush' | 'text' | 'mosaic' | 'pan'
-type Point = { x: number; y: number }
-type Rect = { x: number; y: number; width: number; height: number }
 type AnnotationShape =
   | { kind: 'arrow'; x1: number; y1: number; x2: number; y2: number; color: string; width: number }
   | { kind: 'rect'; x: number; y: number; width: number; height: number; color: string; lineWidth: number }
@@ -36,7 +35,7 @@ type AnnotationShape =
 type Annotation = AnnotationShape & { id: string }
 type ViewMode = 'fit' | 'manual'
 type EditorInteraction =
-  | { kind: 'draw' }
+  | { kind: 'draw'; start: Point }
   | { kind: 'marquee'; start: Point; current: Point; mode: SelectionMode }
   | { kind: 'move'; ids: string[]; start: Point; current: Point; origin: Annotation[]; moved: boolean }
   | { kind: 'pan'; startClient: Point; scrollLeft: number; scrollTop: number }
@@ -48,9 +47,21 @@ const MIN_ZOOM = 0.25
 const MAX_ZOOM = 4
 const ZOOM_STEP = 1.25
 const SELECT_COLOR = '#35d5c7'
+const EDITOR_TOOL_OPTIONS: { key: AnnotationTool; label: string }[] = [
+  { key: 'select', label: '选择' },
+  { key: 'arrow', label: '箭头' },
+  { key: 'rect', label: '矩形' },
+  { key: 'circle', label: '圆形' },
+  { key: 'brush', label: '画笔' },
+  { key: 'text', label: '文本' },
+  { key: 'mosaic', label: '马赛克' },
+  { key: 'pan', label: '拖拽' },
+]
 
 const buttonStyle: CSSProperties = {
   height: 34,
+  minWidth: 0,
+  maxWidth: '100%',
   border: '1px solid var(--hair)',
   borderRadius: 10,
   padding: '0 12px',
@@ -60,6 +71,9 @@ const buttonStyle: CSSProperties = {
   fontWeight: 560,
   cursor: 'pointer',
   whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  boxSizing: 'border-box',
 }
 
 const primaryButtonStyle: CSSProperties = {
@@ -381,6 +395,9 @@ function Chip({ children, good, bad }: { children: ReactNode; good?: boolean; ba
         fontSize: 12,
         fontWeight: 620,
         whiteSpace: 'nowrap',
+        maxWidth: '100%',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
         color: bad ? '#ff8d8d' : good ? 'var(--good)' : 'var(--text2)',
         background: bad ? 'rgba(255, 90, 90, .12)' : good ? 'rgba(58, 208, 122, .12)' : 'var(--pill)',
       }}
@@ -973,10 +990,6 @@ function pointerPos(e: PointerEvent<HTMLCanvasElement>): Point {
   }
 }
 
-function normRect(a: Point, b: Point) {
-  return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(b.x - a.x), height: Math.abs(b.y - a.y) }
-}
-
 function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n))
 }
@@ -1038,7 +1051,7 @@ function annotationBounds(a: Annotation): Rect {
     const pad = Math.max(8, a.width * 3)
     return pointsBounds([{ x: a.x1, y: a.y1 }, { x: a.x2, y: a.y2 }], pad)
   }
-  if (a.kind === 'rect' || a.kind === 'circle') return expandRect({ x: a.x, y: a.y, width: a.width, height: a.height }, Math.max(4, a.lineWidth / 2))
+  if (a.kind === 'rect' || a.kind === 'circle') return expandRect(normalizeRectLike(a), Math.max(4, a.lineWidth / 2))
   if (a.kind === 'brush') return pointsBounds(a.points, Math.max(4, a.width / 2))
   if (a.kind === 'text') return { x: a.x, y: a.y, width: textWidth(a), height: Math.max(18, a.fontSize * 1.25) }
   return pointsBounds(a.points, Math.max(6, a.size / 2))
@@ -1076,8 +1089,8 @@ function hitAnnotation(a: Annotation, p: Point, zoom: number) {
   if (a.kind === 'arrow') {
     return distanceToSegment(p, { x: a.x1, y: a.y1 }, { x: a.x2, y: a.y2 }) <= Math.max(8 / zoom, a.width / 2 + 4)
   }
-  if (a.kind === 'rect') return pointInRect(p, expandRect({ x: a.x, y: a.y, width: a.width, height: a.height }, uiPad + a.lineWidth / 2))
-  if (a.kind === 'circle') return pointInEllipse(p, { x: a.x, y: a.y, width: a.width, height: a.height }, uiPad + a.lineWidth / 2)
+  if (a.kind === 'rect') return pointInRect(p, expandRect(normalizeRectLike(a), uiPad + a.lineWidth / 2))
+  if (a.kind === 'circle') return pointInEllipse(p, normalizeRectLike(a), uiPad + a.lineWidth / 2)
   if (a.kind === 'brush') return hitPolyline(a.points, p, a.width / 2 + uiPad)
   if (a.kind === 'text') return pointInRect(p, expandRect(annotationBounds(a), uiPad))
   return hitPolyline(a.points, p, a.size / 2 + uiPad)
@@ -1142,16 +1155,20 @@ function isValidAnnotation(ann: Annotation | null) {
   if (!ann) return false
   if (ann.kind === 'brush' && ann.points.length < 2) return false
   if (ann.kind === 'mosaic' && ann.points.length < 2) return false
-  if ((ann.kind === 'rect' || ann.kind === 'circle') && (ann.width < 4 || ann.height < 4)) return false
+  if (ann.kind === 'rect' || ann.kind === 'circle') {
+    const r = normalizeRectLike(ann)
+    if (r.width < 4 || r.height < 4) return false
+  }
   if (ann.kind === 'arrow' && Math.hypot(ann.x2 - ann.x1, ann.y2 - ann.y1) < 4) return false
   return true
 }
 
 function shapeTextPosition(shape: Extract<Annotation, { kind: 'rect' | 'circle' }>, width: number, height: number, fontSize: number) {
+  const r = normalizeRectLike(shape)
   const textHeight = Math.max(18, fontSize * 1.25)
   return {
-    x: clamp(shape.x + 10, 0, Math.max(0, width - 24)),
-    y: clamp(shape.y + 10, 0, Math.max(0, height - textHeight)),
+    x: clamp(r.x + 10, 0, Math.max(0, width - 24)),
+    y: clamp(r.y + 10, 0, Math.max(0, height - textHeight)),
   }
 }
 
@@ -1241,14 +1258,16 @@ function drawAnnotation(ctx: CanvasRenderingContext2D, a: Annotation) {
   if (a.kind === 'arrow') drawArrow(ctx, a)
   else if (a.kind === 'brush') drawBrush(ctx, a)
   else if (a.kind === 'rect') {
+    const r = normalizeRectLike(a)
     ctx.strokeStyle = a.color
     ctx.lineWidth = a.lineWidth
-    ctx.strokeRect(a.x, a.y, a.width, a.height)
+    ctx.strokeRect(r.x, r.y, r.width, r.height)
   } else if (a.kind === 'circle') {
+    const r = normalizeRectLike(a)
     ctx.strokeStyle = a.color
     ctx.lineWidth = a.lineWidth
     ctx.beginPath()
-    ctx.ellipse(a.x + a.width / 2, a.y + a.height / 2, Math.max(0.5, a.width / 2), Math.max(0.5, a.height / 2), 0, 0, Math.PI * 2)
+    ctx.ellipse(r.x + r.width / 2, r.y + r.height / 2, Math.max(0.5, r.width / 2), Math.max(0.5, r.height / 2), 0, 0, Math.PI * 2)
     ctx.stroke()
   } else if (a.kind === 'text') {
     ctx.fillStyle = a.color
@@ -1304,7 +1323,7 @@ function drawEditorUi(ctx: CanvasRenderingContext2D, annotations: Annotation[], 
     drawSelectionLabel(ctx, '已选 1 个', group.x + group.width + 6 / zoom, group.y, zoom)
   }
   if (interaction?.kind === 'marquee') {
-    const r = normRect(interaction.start, interaction.current)
+    const r = rectFromPoints(interaction.start, interaction.current)
     ctx.setLineDash([5 / zoom, 4 / zoom])
     ctx.lineWidth = 1.5 / zoom
     ctx.fillRect(r.x, r.y, r.width, r.height)
@@ -1469,14 +1488,17 @@ function AnnotationEditor({ capture, onCancel, onDone }: { capture: ScreenshotCa
 
   const commit = useCallback((ann: Annotation | null) => {
     if (!ann) return
-    if (!isValidAnnotation(ann)) return
-    applyAnnotationChange((prev) => [...prev, cloneAnnotation(ann)], { clearSelection: true })
+    const next = ann.kind === 'rect' || ann.kind === 'circle' ? normalizeRectLike(ann) : ann
+    if (!isValidAnnotation(next)) return
+    applyAnnotationChange((prev) => [...prev, cloneAnnotation(next)], { clearSelection: true })
   }, [applyAnnotationChange])
 
   const commitShapeWithTextDraft = useCallback(
     (ann: Annotation | null) => {
-      if (!ann || (ann.kind !== 'rect' && ann.kind !== 'circle') || !isValidAnnotation(ann)) return false
-      const shape = cloneAnnotation(ann) as Extract<Annotation, { kind: 'rect' | 'circle' }>
+      if (!ann || (ann.kind !== 'rect' && ann.kind !== 'circle')) return false
+      const normalized = normalizeRectLike(ann)
+      if (!isValidAnnotation(normalized)) return false
+      const shape = cloneAnnotation(normalized) as Extract<Annotation, { kind: 'rect' | 'circle' }>
       applyAnnotationChange((prev) => [...prev, shape], { clearSelection: true })
       const pos = shapeTextPosition(shape, capture.width, capture.height, fontSize)
       const id = ++textDraftSeq.current
@@ -1600,7 +1622,7 @@ function AnnotationEditor({ capture, onCancel, onDone }: { capture: ScreenshotCa
     }
     if (textDraft) commitTextDraft(textDraft, textDraft.text)
     setSelectedIds([])
-    setInteraction({ kind: 'draw' })
+    setInteraction({ kind: 'draw', start: p })
     try {
       e.currentTarget.setPointerCapture(e.pointerId)
     } catch {
@@ -1640,8 +1662,7 @@ function AnnotationEditor({ capture, onCancel, onDone }: { capture: ScreenshotCa
     if (draft.kind === 'brush') setDraft({ ...draft, points: [...draft.points, p] })
     else if (draft.kind === 'arrow') setDraft({ ...draft, x2: p.x, y2: p.y })
     else if (draft.kind === 'rect' || draft.kind === 'circle') {
-      const r = normRect({ x: draft.x, y: draft.y }, p)
-      setDraft({ ...draft, ...r })
+      setDraft(shapeFromDrag(draft, current.start, p))
     } else if (draft.kind === 'mosaic') {
       const last = draft.points[draft.points.length - 1]
       if (!last || Math.hypot(p.x - last.x, p.y - last.y) >= 1) setDraft({ ...draft, points: [...draft.points, p] })
@@ -1656,7 +1677,7 @@ function AnnotationEditor({ capture, onCancel, onDone }: { capture: ScreenshotCa
       else commitShapeWithTextDraft(draft)
       setDraft(null)
     } else if (current.kind === 'marquee') {
-      const r = normRect(current.start, current.current)
+      const r = rectFromPoints(current.start, current.current)
       if (r.width >= 3 || r.height >= 3) {
         const ids = annotations.filter((ann) => rectIntersects(annotationBounds(ann), r)).map((ann) => ann.id)
         setSelectedIds((prev) => applySelectionMode(prev, ids, current.mode))
@@ -1893,6 +1914,82 @@ function AnnotationEditor({ capture, onCancel, onDone }: { capture: ScreenshotCa
           ? 'default'
           : 'crosshair'
 
+  const chooseTool = (nextTool: AnnotationTool) => {
+    if (textDraft) commitTextDraft(textDraft, textDraft.text)
+    setInteraction(null)
+    setDraft(null)
+    setTool(nextTool)
+  }
+
+  const toolButtonStyle = (active: boolean): CSSProperties => ({
+    ...buttonStyle,
+    height: 32,
+    padding: '0 10px',
+    borderColor: active ? 'transparent' : 'var(--hair)',
+    background: active ? 'var(--accent)' : 'var(--pill)',
+    color: active ? '#fff' : 'var(--text)',
+  })
+
+  const editorToolbar = (
+    <div
+      style={{
+        display: 'grid',
+        gap: 10,
+        padding: 10,
+        border: '1px solid var(--hair)',
+        borderRadius: 12,
+        background: 'var(--surface3)',
+        boxSizing: 'border-box',
+      }}
+    >
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', minWidth: 0 }}>
+        {EDITOR_TOOL_OPTIONS.map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => chooseTool(item.key)}
+            style={toolButtonStyle(tool === item.key)}
+          >
+            {item.label}
+          </button>
+        ))}
+        {tool !== 'mosaic' && tool !== 'select' && tool !== 'pan' && (
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7, minHeight: 34, color: 'var(--text2)', fontSize: 12, whiteSpace: 'nowrap' }}>
+            <span>颜色</span>
+            <input value={color} onChange={(e) => setColor(e.target.value)} type="color" style={{ width: 34, height: 34, border: '1px solid var(--hair)', borderRadius: 8, background: 'var(--pill)', flex: '0 0 auto' }} />
+          </label>
+        )}
+        {(tool === 'rect' || tool === 'circle') && (
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7, minHeight: 34, color: 'var(--text2)', fontSize: 12, whiteSpace: 'nowrap' }}>
+            <input type="checkbox" checked={shapeText} onChange={(e) => setShapeText(e.target.checked)} />
+            <span>携带文本</span>
+          </label>
+        )}
+        <Button disabled={!selectedIds.length} onClick={deleteSelected}>删除</Button>
+        <Button disabled={!undoStack.length} onClick={undo}>撤销</Button>
+        <Button disabled={!redoStack.length} onClick={redo}>重做</Button>
+        <Button disabled={!annotations.length} onClick={clearAnnotations}>清空</Button>
+        <Chip>{statusText}</Chip>
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', minWidth: 0 }}>
+        {tool === 'text' ? (
+          <RangeControl label="字号" min={14} max={64} value={fontSize} onChange={setFontSize} />
+        ) : tool === 'mosaic' ? (
+          <RangeControl label="马赛克笔刷" min={12} max={72} value={mosaicSize} onChange={setMosaicSize} />
+        ) : tool !== 'select' && tool !== 'pan' ? (
+          <RangeControl label="线宽" min={2} max={16} value={lineWidth} onChange={setLineWidth} />
+        ) : null}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginLeft: 'auto', minWidth: 0 }}>
+          <Button disabled={zoom <= MIN_ZOOM} onClick={() => zoomAround(zoom / ZOOM_STEP)}>−</Button>
+          <Chip>{Math.round(zoom * 100)}%</Chip>
+          <Button disabled={zoom >= MAX_ZOOM} onClick={() => zoomAround(zoom * ZOOM_STEP)}>＋</Button>
+          <Button onClick={fitZoom}>适配</Button>
+          <Button onClick={() => zoomAround(1)}>100%</Button>
+        </div>
+      </div>
+    </div>
+  )
+
   return (
     <Panel
       label={capture.source === 'pin-annotate' ? '标注贴图' : '标注编辑器'}
@@ -1900,59 +1997,6 @@ function AnnotationEditor({ capture, onCancel, onDone }: { capture: ScreenshotCa
       flex={false}
     >
       <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <Seg
-            value={tool}
-            onChange={(v) => {
-              if (textDraft) commitTextDraft(textDraft, textDraft.text)
-              setInteraction(null)
-              setDraft(null)
-              setTool(v as AnnotationTool)
-            }}
-            options={[
-              { key: 'select', label: '选择' },
-              { key: 'arrow', label: '箭头' },
-              { key: 'rect', label: '矩形' },
-              { key: 'circle', label: '圆形' },
-              { key: 'brush', label: '画笔' },
-              { key: 'text', label: '文本' },
-              { key: 'mosaic', label: '马赛克' },
-              { key: 'pan', label: '拖拽' },
-            ]}
-          />
-          {tool !== 'mosaic' && tool !== 'select' && tool !== 'pan' && (
-            <label style={{ display: 'grid', gap: 4, color: 'var(--text2)', fontSize: 12 }}>
-              <span>颜色</span>
-              <input value={color} onChange={(e) => setColor(e.target.value)} type="color" style={{ width: 34, height: 34, border: '1px solid var(--hair)', borderRadius: 8, background: 'var(--pill)' }} />
-            </label>
-          )}
-          {tool === 'text' ? (
-            <RangeControl label="字号" min={14} max={64} value={fontSize} onChange={setFontSize} />
-          ) : tool === 'mosaic' ? (
-            <RangeControl label="马赛克笔刷" min={12} max={72} value={mosaicSize} onChange={setMosaicSize} />
-          ) : tool !== 'select' && tool !== 'pan' ? (
-            <RangeControl label="线宽" min={2} max={16} value={lineWidth} onChange={setLineWidth} />
-          ) : null}
-          {(tool === 'rect' || tool === 'circle') && (
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7, minHeight: 34, color: 'var(--text2)', fontSize: 12 }}>
-              <input type="checkbox" checked={shapeText} onChange={(e) => setShapeText(e.target.checked)} />
-              <span>携带文本</span>
-            </label>
-          )}
-          <Button disabled={!selectedIds.length} onClick={deleteSelected}>删除</Button>
-          <Button disabled={!undoStack.length} onClick={undo}>撤销</Button>
-          <Button disabled={!redoStack.length} onClick={redo}>重做</Button>
-          <Button disabled={!annotations.length} onClick={clearAnnotations}>清空</Button>
-          <Chip>{statusText}</Chip>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginLeft: 'auto' }}>
-            <Button disabled={zoom <= MIN_ZOOM} onClick={() => zoomAround(zoom / ZOOM_STEP)}>−</Button>
-            <Chip>{Math.round(zoom * 100)}%</Chip>
-            <Button disabled={zoom >= MAX_ZOOM} onClick={() => zoomAround(zoom * ZOOM_STEP)}>＋</Button>
-            <Button onClick={fitZoom}>适配</Button>
-            <Button onClick={() => zoomAround(1)}>100%</Button>
-          </div>
-        </div>
-
         <div
           ref={viewportRef}
           tabIndex={0}
@@ -1962,8 +2006,8 @@ function AnnotationEditor({ capture, onCancel, onDone }: { capture: ScreenshotCa
           style={{
             position: 'relative',
             width: '100%',
-            height: 'min(62vh, 680px)',
-            minHeight: 420,
+            height: 'clamp(320px, 56vh, 660px)',
+            minHeight: 0,
             overflow: 'auto',
             border: '1px solid var(--hair)',
             borderRadius: 12,
@@ -2016,6 +2060,8 @@ function AnnotationEditor({ capture, onCancel, onDone }: { capture: ScreenshotCa
             )}
           </div>
         </div>
+
+        {editorToolbar}
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <Button onClick={copy}>复制</Button>

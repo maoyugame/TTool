@@ -1,7 +1,7 @@
 // Electron 主进程：创建无边框毛玻璃窗口，并通过 IPC 暴露桌面能力
 // （剪贴板、打开第三方应用、选择应用路径、窗口控制）。
 // 设计为可选壳层——核心 React 应用在浏览器中也能独立运行（见 src/platform）。
-const { app, BrowserWindow, ipcMain, clipboard, shell, dialog, globalShortcut, screen, desktopCapturer, nativeImage, systemPreferences } = require('electron')
+const { app, BrowserWindow, ipcMain, clipboard, shell, dialog, globalShortcut, screen, desktopCapturer, nativeImage, systemPreferences, Tray, Menu } = require('electron')
 const path = require('node:path')
 const fs = require('node:fs')
 const { spawn } = require('node:child_process')
@@ -11,11 +11,15 @@ const { searchFiles, searchDeep } = require('./filesearch.cjs')
 
 // 固定应用名，确保 userData（插件目录）路径稳定一致（dev 下默认会变成 "Electron"）。
 app.setName('ttool')
+if (process.platform === 'win32') app.setAppUserModelId('com.maoyugame.ttool')
 
 const DEV_URL = process.env.TOOLBOX_DEV_URL
+const APP_ICON = path.join(__dirname, '..', 'assets', 'icon', process.platform === 'win32' ? 'app.ico' : 'app.png')
 let win = null
 let host = null // 宿主能力（net / storage / secrets），whenReady 后初始化
 let launcher = null // 快速启动器小窗（Spotlight 式悬浮窗）
+let tray = null
+let isQuitting = false
 const LAUNCHER_W = 720
 let launcherHeight = 72 // 渲染层按内容动态上报；初始仅搜索栏高度
 
@@ -280,6 +284,42 @@ function openToolInMain(id) {
   else send()
 }
 
+function showMainWindow() {
+  if (!win || win.isDestroyed()) createWindow()
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+}
+
+function hideMainWindowToTray() {
+  if (!win || win.isDestroyed()) return
+  win.hide()
+}
+
+function requestMainWindowClose() {
+  hideMainWindowToTray()
+  return { ok: true }
+}
+
+function createTray() {
+  if (tray) return
+  const icon = nativeImage.createFromPath(APP_ICON)
+  tray = new Tray(icon)
+  tray.setToolTip('TTool')
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: '显示 TTool', click: showMainWindow },
+    { type: 'separator' },
+    {
+      label: '退出 TTool',
+      click: () => {
+        isQuitting = true
+        app.quit()
+      },
+    },
+  ]))
+  tray.on('click', showMainWindow)
+}
+
 function emitScreenshotStatus(level, message) {
   if (win && !win.isDestroyed()) sendToMain('screenshot:status', { level, message })
 }
@@ -303,34 +343,60 @@ function overlayHtml(captureId, d, action) {
 <head>
 <meta charset="utf-8" />
 <style>
-html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; cursor: crosshair; user-select: none; font-family: system-ui,-apple-system,Segoe UI,sans-serif; }
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; cursor: none; user-select: none; font-family: system-ui,-apple-system,Segoe UI,sans-serif; }
 #dim { position: fixed; inset: 0; background: rgba(0,0,0,.48); pointer-events: none; }
 body.has-selection #dim { background: transparent; }
-#sel { position: absolute; display: none; border: 2px solid #35d5c7; background: rgba(53,213,199,.04); box-shadow: 0 0 0 9999px rgba(0,0,0,.46), 0 0 0 1px rgba(255,255,255,.78) inset, 0 0 0 1px rgba(53,213,199,.25); box-sizing: border-box; cursor: default; }
+#cursorReticle { position: fixed; left: 0; top: 0; width: 16px; height: 16px; margin: -8px 0 0 -8px; pointer-events: none; z-index: 2147483647; transform: translate3d(-9999px,-9999px,0); opacity: .94; transition: opacity 70ms ease; }
+#cursorReticle::before, #cursorReticle::after { content: ""; position: absolute; left: 50%; top: 50%; background: #f5ffff; box-shadow: 0 0 0 1px rgba(0,0,0,.82), 0 0 4px rgba(53,213,199,.48); transform: translate(-50%, -50%); }
+#cursorReticle::before { width: 1px; height: 16px; }
+#cursorReticle::after { width: 16px; height: 1px; }
+#cursorReticle.hidden, #cursorReticle:not([data-cursor="crosshair"]) { opacity: 0; }
+#sel { position: absolute; display: none; border: 2px solid #35d5c7; background: rgba(53,213,199,.04); box-shadow: 0 0 0 9999px rgba(0,0,0,.46), 0 0 0 1px rgba(255,255,255,.78) inset, 0 0 0 1px rgba(53,213,199,.25); box-sizing: border-box; cursor: default; touch-action: none; }
+#anno { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+#textInput { position: absolute; display: none; min-width: 120px; max-width: calc(100% - 10px); height: 34px; z-index: 2; box-sizing: border-box; border: 1px solid #35d5c7; border-radius: 8px; padding: 0 8px; color: #ff4d4f; background: rgba(15,18,24,.96); outline: none; box-shadow: 0 8px 22px rgba(0,0,0,.28); }
 #sel.invalid { border-color: #ff6b6b; background: rgba(255,107,107,.06); box-shadow: 0 0 0 9999px rgba(0,0,0,.48), 0 0 0 1px rgba(255,255,255,.72) inset, 0 0 0 1px rgba(255,107,107,.35); }
 #chip { position: absolute; transform: translateY(calc(-100% - 7px)); padding: 4px 8px; border-radius: 8px; background: rgba(15,18,24,.92); color: #fff; font-size: 12px; line-height: 1.2; white-space: nowrap; box-shadow: 0 5px 16px rgba(0,0,0,.24); pointer-events: none; }
 #sel.invalid #chip { background: rgba(92,20,25,.95); }
 .handle { position: absolute; width: 9px; height: 9px; border-radius: 3px; background: #35d5c7; border: 1px solid rgba(255,255,255,.95); box-shadow: 0 2px 6px rgba(0,0,0,.28); box-sizing: border-box; }
 #sel.invalid .handle { background: #ff6b6b; }
-#bar { position: absolute; display: none; align-items: center; flex-wrap: wrap; gap: 6px; max-width: calc(100vw - 16px); padding: 7px; border-radius: 11px; background: rgba(15,18,24,.94); box-shadow: 0 10px 30px rgba(0,0,0,.34); cursor: default; }
+#bar { position: absolute; display: none; align-items: center; flex-wrap: wrap; gap: 6px; max-width: calc(100vw - 16px); max-height: min(220px, calc(100vh - 16px)); overflow: auto; padding: 7px; border-radius: 11px; background: rgba(15,18,24,.94); box-shadow: 0 10px 30px rgba(0,0,0,.34); cursor: default; }
 .sep { width: 1px; height: 20px; background: rgba(255,255,255,.18); margin: 0 2px; }
 button { height: 32px; min-width: 42px; border: 0; border-radius: 8px; padding: 0 11px; color: #fff; background: rgba(255,255,255,.15); font-size: 12px; font-weight: 650; cursor: pointer; }
 button:hover:not(:disabled) { background: rgba(255,255,255,.22); }
 button.primary { background: #1ba99a; }
 button.primary:hover:not(:disabled) { background: #22bfae; }
+button.active { color: #071416; background: #35d5c7; }
 button.danger { color: #ffb1b1; }
 button:disabled { opacity: .42; cursor: not-allowed; }
+.anno-control { height: 32px; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: 8px; color: rgba(255,255,255,.9); background: rgba(255,255,255,.12); font-size: 11.5px; font-weight: 650; white-space: nowrap; box-sizing: border-box; }
+.anno-control input[type="color"] { width: 26px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: transparent; }
+.anno-control input[type="range"] { width: 76px; }
+#sizeValue { min-width: 28px; text-align: right; color: #fff; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 #hint { position: fixed; left: 50%; top: 18px; transform: translateX(-50%); padding: 8px 12px; border-radius: 10px; color: #fff; background: rgba(15,18,24,.76); font-size: 12px; pointer-events: none; }
 </style>
 </head>
 <body>
 <div id="dim"></div>
-<div id="hint">拖拽选择区域，Esc 取消</div>
-<div id="sel"><div id="chip"></div></div>
+<div id="cursorReticle" class="hidden" aria-hidden="true"></div>
+<div id="hint">拖拽选择区域，选区后拖动边框调整大小，Esc 取消</div>
+<div id="sel"><canvas id="anno"></canvas><input id="textInput" maxlength="120" /><div id="chip"></div></div>
 <div id="bar">
   <button data-action="copy">复制</button>
   <button data-action="save">保存</button>
   <button data-action="pin">贴图</button>
+  <span class="sep"></span>
+  <button data-tool="">选择</button>
+  <button data-tool="arrow">箭头</button>
+  <button data-tool="rect">矩形</button>
+  <button data-tool="circle">圆形</button>
+  <button data-tool="brush">画笔</button>
+  <button data-tool="text">文本</button>
+  <button data-tool="mosaic">马赛克</button>
+  <label class="anno-control" id="colorControl">颜色<input id="annoColor" type="color" value="#ff4d4f" /></label>
+  <label class="anno-control" id="sizeControl"><span id="sizeLabel">线宽</span><input id="sizeRange" type="range" min="2" max="16" value="4" /><span id="sizeValue">4px</span></label>
+  <button id="undoAnno">撤销</button>
+  <button id="redoAnno">重做</button>
+  <button id="clearAnno">清除</button>
   <span class="sep"></span>
   <button class="danger" id="cancel">取消</button>
   <button class="primary" data-action="default">✓</button>
@@ -338,34 +404,398 @@ button:disabled { opacity: .42; cursor: not-allowed; }
 <script>
 const META = ${meta};
 const MIN = 8;
+const EDGE_HIT = 8;
+const ANNO_MIN = 4;
+const DEFAULT_ANNO_COLOR = '#ff4d4f';
+const DEFAULT_LINE_WIDTH = 4;
+const DEFAULT_FONT_SIZE = 28;
+const DEFAULT_MOSAIC_SIZE = 32;
+const TEXT_CLICK_DELAY = 220;
 let start = null;
 let rect = null;
 let selecting = false;
+let resizing = null;
+let drawingAnnotation = null;
+let annotations = [];
+let undoStack = [];
+let redoStack = [];
+let activeTool = META.defaultAction === 'edit' ? 'arrow' : '';
+let annoColor = DEFAULT_ANNO_COLOR;
+let lineWidth = DEFAULT_LINE_WIDTH;
+let fontSize = DEFAULT_FONT_SIZE;
+let mosaicSize = DEFAULT_MOSAIC_SIZE;
+let textDraft = null;
+let textClickTimer = 0;
 let completed = false;
 let pendingInsideClick = false;
 let downPoint = null;
 let movedSinceDown = false;
 const sel = document.getElementById('sel');
+const anno = document.getElementById('anno');
+const annoCtx = anno.getContext('2d');
+const textInput = document.getElementById('textInput');
+const cursorReticle = document.getElementById('cursorReticle');
 const chip = document.getElementById('chip');
 const bar = document.getElementById('bar');
 const hint = document.getElementById('hint');
+const colorInput = document.getElementById('annoColor');
+const sizeRange = document.getElementById('sizeRange');
+const sizeLabel = document.getElementById('sizeLabel');
+const sizeValue = document.getElementById('sizeValue');
 function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
 function pointInRect(p, r) { return Boolean(r && p.x >= r.x && p.x <= r.x + r.width && p.y >= r.y && p.y <= r.y + r.height); }
-function isInteractive(target) { return Boolean(target.closest && target.closest('button, #bar, .handle, #chip')); }
+function rectFromPoints(a, b) { return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(b.x - a.x), height: Math.abs(b.y - a.y) }; }
+function isInteractive(target) { return Boolean(target.closest && target.closest('button, #bar, #chip, #textInput')); }
 function isValid() { return Boolean(rect && rect.width >= MIN && rect.height >= MIN); }
+function isAnnotationTool(tool) { return ['arrow', 'rect', 'circle', 'brush', 'text', 'mosaic'].includes(tool); }
+function cursorForEdge(edge) {
+  if (edge === 'n' || edge === 's') return 'ns-resize';
+  if (edge === 'e' || edge === 'w') return 'ew-resize';
+  if (edge === 'nw' || edge === 'se') return 'nwse-resize';
+  return 'nesw-resize';
+}
+function setOverlayCursor(cursor) {
+  const nativeCursor = cursor === 'crosshair' ? 'none' : cursor;
+  document.body.style.cursor = nativeCursor;
+  sel.style.cursor = nativeCursor;
+  cursorReticle.setAttribute('data-cursor', cursor);
+}
+function edgeFromTarget(target) {
+  const handle = target && target.closest && target.closest('.handle');
+  return handle ? handle.getAttribute('data-edge') || '' : '';
+}
+function resizeEdgeFromPoint(p, r) {
+  if (!r) return '';
+  const inX = p.x >= r.x - EDGE_HIT && p.x <= r.x + r.width + EDGE_HIT;
+  const inY = p.y >= r.y - EDGE_HIT && p.y <= r.y + r.height + EDGE_HIT;
+  const nearTop = inX && Math.abs(p.y - r.y) <= EDGE_HIT;
+  const nearBottom = inX && Math.abs(p.y - (r.y + r.height)) <= EDGE_HIT;
+  const nearLeft = inY && Math.abs(p.x - r.x) <= EDGE_HIT;
+  const nearRight = inY && Math.abs(p.x - (r.x + r.width)) <= EDGE_HIT;
+  const vertical = nearTop ? 'n' : nearBottom ? 's' : '';
+  const horizontal = nearLeft ? 'w' : nearRight ? 'e' : '';
+  return vertical + horizontal;
+}
+function resizeEdgeForEvent(target, p) {
+  return edgeFromTarget(target) || resizeEdgeFromPoint(p, rect);
+}
+function updateHoverCursor(p) {
+  if (!completed || selecting || resizing || !rect) {
+    setOverlayCursor('crosshair');
+    return;
+  }
+  const edge = resizeEdgeFromPoint(p, rect);
+  setOverlayCursor(edge ? cursorForEdge(edge) : (pointInRect(p, rect) && !activeTool ? 'default' : 'crosshair'));
+}
+function cursorReticleShouldHide(target, p) {
+  const interactive = target && target.closest && target.closest('#bar, button, input, .handle');
+  return Boolean(interactive || (completed && !resizing && rect && resizeEdgeFromPoint(p, rect)));
+}
+function updateCursorReticle(p, target) {
+  cursorReticle.style.transform = 'translate3d(' + p.x + 'px,' + p.y + 'px,0)';
+  cursorReticle.classList.toggle('hidden', cursorReticleShouldHide(target, p));
+}
+function targetAtPoint(p) {
+  return document.elementFromPoint(p.x, p.y);
+}
 let sending = false;
 function updateButtons() {
   const valid = isValid();
   sel.classList.toggle('invalid', Boolean(rect) && !valid);
   chip.textContent = valid || !rect ? (rect ? rect.width + ' × ' + rect.height : '') : '选区过小';
   bar.querySelectorAll('button[data-action]').forEach((btn) => { btn.disabled = !valid || sending; });
+  bar.querySelectorAll('button[data-tool]').forEach((btn) => {
+    const tool = btn.getAttribute('data-tool');
+    btn.disabled = !valid || sending;
+    btn.classList.toggle('active', tool === activeTool);
+  });
+  document.getElementById('undoAnno').disabled = sending || undoStack.length === 0;
+  document.getElementById('redoAnno').disabled = sending || redoStack.length === 0;
+  document.getElementById('clearAnno').disabled = sending || annotations.length === 0;
   document.getElementById('cancel').disabled = sending;
+  colorInput.disabled = sending || !isAnnotationTool(activeTool) || activeTool === 'mosaic';
+  sizeRange.disabled = sending || !isAnnotationTool(activeTool);
 }
 function showBridgeError(message) {
   sending = false;
   hint.textContent = message || '截图失败，请重试';
   hint.style.background = 'rgba(92,20,25,.92)';
   updateButtons();
+}
+function annotationHint() {
+  if (!activeTool) return '选择模式：双击选区确认，或拖出新区域';
+  if (activeTool === 'text') return '单击添加文本，双击选区确认提交';
+  if (activeTool === 'mosaic') return '在选区内拖拽涂抹马赛克，双击确认提交';
+  const names = { arrow: '箭头', rect: '矩形', circle: '圆形', brush: '画笔' };
+  return '在选区内拖拽绘制' + (names[activeTool] || '标注') + '，双击确认提交';
+}
+function setActiveTool(tool) {
+  activeTool = isAnnotationTool(tool) ? tool : '';
+  commitTextInput();
+  drawingAnnotation = null;
+  updateSizeControl();
+  hint.textContent = annotationHint();
+  updateHoverCursor(downPoint || { x: 0, y: 0 });
+  updateButtons();
+}
+function updateSizeControl() {
+  if (activeTool === 'text') {
+    sizeLabel.textContent = '字号';
+    sizeRange.min = '14';
+    sizeRange.max = '64';
+    sizeRange.value = String(fontSize);
+    sizeValue.textContent = fontSize + 'px';
+  } else if (activeTool === 'mosaic') {
+    sizeLabel.textContent = '马赛克';
+    sizeRange.min = '12';
+    sizeRange.max = '72';
+    sizeRange.value = String(mosaicSize);
+    sizeValue.textContent = mosaicSize + 'px';
+  } else {
+    sizeLabel.textContent = '线宽';
+    sizeRange.min = '2';
+    sizeRange.max = '16';
+    sizeRange.value = String(lineWidth);
+    sizeValue.textContent = lineWidth + 'px';
+  }
+}
+function localPoint(p) {
+  return {
+    x: clamp(p.x - rect.x, 0, rect.width),
+    y: clamp(p.y - rect.y, 0, rect.height),
+  };
+}
+function clonePoint(p) { return { x: p.x, y: p.y }; }
+function cloneAnnotationShape(shape) {
+  if (shape.kind === 'brush' || shape.kind === 'mosaic') return { ...shape, points: shape.points.map(clonePoint) };
+  return { ...shape };
+}
+function snapshotAnnotations() {
+  return annotations.map(cloneAnnotationShape);
+}
+function applyAnnotationChange(next) {
+  undoStack.unshift(snapshotAnnotations());
+  undoStack = undoStack.slice(0, 40);
+  redoStack = [];
+  annotations = next.map(cloneAnnotationShape);
+  redrawAnnotations();
+  updateButtons();
+}
+function commitAnnotation(shape) {
+  if (!isValidAnnotationShape(shape)) return;
+  applyAnnotationChange([...annotations, shape]);
+}
+function undoAnnotation() {
+  if (!undoStack.length) return;
+  redoStack.unshift(snapshotAnnotations());
+  annotations = undoStack.shift();
+  redrawAnnotations();
+  updateButtons();
+}
+function redoAnnotation() {
+  if (!redoStack.length) return;
+  undoStack.unshift(snapshotAnnotations());
+  annotations = redoStack.shift();
+  redrawAnnotations();
+  updateButtons();
+}
+function syncAnnotationCanvas() {
+  const w = Math.max(1, rect ? rect.width : 1);
+  const h = Math.max(1, rect ? rect.height : 1);
+  if (anno.width !== w) anno.width = w;
+  if (anno.height !== h) anno.height = h;
+}
+function drawArrow(ctx, shape) {
+  const angle = Math.atan2(shape.y2 - shape.y1, shape.x2 - shape.x1);
+  const width = Math.max(1, shape.width || lineWidth);
+  const head = Math.max(12, width * 5);
+  ctx.strokeStyle = shape.color || annoColor;
+  ctx.fillStyle = shape.color || annoColor;
+  ctx.lineWidth = width;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(shape.x1, shape.y1);
+  ctx.lineTo(shape.x2, shape.y2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(shape.x2, shape.y2);
+  ctx.lineTo(shape.x2 - head * Math.cos(angle - Math.PI / 6), shape.y2 - head * Math.sin(angle - Math.PI / 6));
+  ctx.lineTo(shape.x2 - head * Math.cos(angle + Math.PI / 6), shape.y2 - head * Math.sin(angle + Math.PI / 6));
+  ctx.closePath();
+  ctx.fill();
+}
+function drawPolyline(ctx, shape) {
+  if (!shape.points || shape.points.length < 2) return;
+  ctx.strokeStyle = shape.color || annoColor;
+  ctx.lineWidth = Math.max(1, shape.width || lineWidth);
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(shape.points[0].x, shape.points[0].y);
+  shape.points.slice(1).forEach((p) => ctx.lineTo(p.x, p.y));
+  ctx.stroke();
+}
+function drawMosaicPreview(ctx, shape) {
+  if (!shape.points || shape.points.length < 1) return;
+  const radius = Math.max(6, (shape.size || mosaicSize) / 2);
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,.26)';
+  ctx.strokeStyle = 'rgba(53,213,199,.82)';
+  ctx.lineWidth = 1;
+  for (const p of shape.points) {
+    ctx.beginPath();
+    ctx.rect(p.x - radius, p.y - radius, radius * 2, radius * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+function drawAnnotationShape(ctx, shape) {
+  ctx.save();
+  ctx.strokeStyle = shape.color || annoColor;
+  ctx.fillStyle = shape.color || annoColor;
+  ctx.lineWidth = Math.max(1, shape.lineWidth || lineWidth);
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  if (shape.kind === 'arrow') {
+    drawArrow(ctx, shape);
+  } else if (shape.kind === 'rect') {
+    ctx.strokeRect(shape.x, shape.y, shape.width, shape.height);
+  } else if (shape.kind === 'circle') {
+    ctx.beginPath();
+    ctx.ellipse(shape.x + shape.width / 2, shape.y + shape.height / 2, Math.max(0.5, shape.width / 2), Math.max(0.5, shape.height / 2), 0, 0, Math.PI * 2);
+    ctx.stroke();
+  } else if (shape.kind === 'brush') {
+    drawPolyline(ctx, shape);
+  } else if (shape.kind === 'text') {
+    ctx.font = Math.max(12, shape.fontSize || fontSize) + 'px system-ui,-apple-system,Segoe UI,sans-serif';
+    ctx.textBaseline = 'top';
+    ctx.fillText(shape.text, shape.x, shape.y);
+  } else if (shape.kind === 'mosaic') {
+    drawMosaicPreview(ctx, shape);
+  }
+  ctx.restore();
+}
+function draftAnnotationShape() {
+  return drawingAnnotation ? drawingAnnotation.shape : null;
+}
+function redrawAnnotations() {
+  syncAnnotationCanvas();
+  annoCtx.clearRect(0, 0, anno.width, anno.height);
+  annotations.forEach((shape) => drawAnnotationShape(annoCtx, shape));
+  const draft = draftAnnotationShape();
+  if (draft) drawAnnotationShape(annoCtx, draft);
+}
+function discardAnnotations() {
+  annotations = [];
+  undoStack = [];
+  redoStack = [];
+  drawingAnnotation = null;
+  cancelPendingText();
+  hideTextInput();
+}
+function beginAnnotation(p) {
+  if (!rect || !isAnnotationTool(activeTool) || !pointInRect(p, rect)) return false;
+  const local = localPoint(p);
+  if (activeTool === 'text') {
+    scheduleTextInput(local);
+    return true;
+  }
+  const color = annoColor;
+  if (activeTool === 'arrow') drawingAnnotation = { start: local, shape: { kind: 'arrow', x1: local.x, y1: local.y, x2: local.x, y2: local.y, color, width: lineWidth } };
+  else if (activeTool === 'rect') drawingAnnotation = { start: local, shape: { kind: 'rect', x: local.x, y: local.y, width: 0, height: 0, color, lineWidth } };
+  else if (activeTool === 'circle') drawingAnnotation = { start: local, shape: { kind: 'circle', x: local.x, y: local.y, width: 0, height: 0, color, lineWidth } };
+  else if (activeTool === 'brush') drawingAnnotation = { start: local, shape: { kind: 'brush', points: [local], color, width: lineWidth } };
+  else drawingAnnotation = { start: local, shape: { kind: 'mosaic', points: [local], size: mosaicSize, block: Math.max(6, Math.round(mosaicSize / 3)) } };
+  hint.textContent = annotationHint();
+  setOverlayCursor('crosshair');
+  redrawAnnotations();
+  return true;
+}
+function updateAnnotation(p) {
+  if (!drawingAnnotation) return;
+  const local = localPoint(p);
+  const shape = drawingAnnotation.shape;
+  if (shape.kind === 'arrow') {
+    shape.x2 = local.x;
+    shape.y2 = local.y;
+  } else if (shape.kind === 'rect' || shape.kind === 'circle') {
+    const r = rectFromPoints(drawingAnnotation.start, local);
+    shape.x = r.x;
+    shape.y = r.y;
+    shape.width = r.width;
+    shape.height = r.height;
+  } else if (shape.kind === 'brush' || shape.kind === 'mosaic') {
+    const last = shape.points[shape.points.length - 1];
+    if (!last || Math.hypot(local.x - last.x, local.y - last.y) >= 1) shape.points.push(local);
+  }
+  redrawAnnotations();
+}
+function finishAnnotation(p) {
+  if (!drawingAnnotation) return;
+  updateAnnotation(p);
+  const shape = draftAnnotationShape();
+  drawingAnnotation = null;
+  if (shape) commitAnnotation(shape);
+  hint.textContent = annotationHint();
+  redrawAnnotations();
+  updateButtons();
+}
+function isValidAnnotationShape(shape) {
+  if (!shape) return false;
+  if (shape.kind === 'arrow') return Math.hypot(shape.x2 - shape.x1, shape.y2 - shape.y1) >= ANNO_MIN;
+  if (shape.kind === 'rect' || shape.kind === 'circle') return shape.width >= ANNO_MIN && shape.height >= ANNO_MIN;
+  if (shape.kind === 'brush' || shape.kind === 'mosaic') return shape.points && shape.points.length >= 2;
+  return shape.kind === 'text' && String(shape.text || '').trim().length > 0;
+}
+function cancelPendingText() {
+  if (textClickTimer) window.clearTimeout(textClickTimer);
+  textClickTimer = 0;
+}
+function scheduleTextInput(local) {
+  cancelPendingText();
+  textClickTimer = window.setTimeout(() => {
+    textClickTimer = 0;
+    showTextInput(local);
+  }, TEXT_CLICK_DELAY);
+}
+function showTextInput(local) {
+  textDraft = {
+    x: clamp(local.x, 0, Math.max(0, rect.width - 24)),
+    y: clamp(local.y, 0, Math.max(0, rect.height - fontSize - 10)),
+  };
+  textInput.value = '';
+  textInput.style.left = textDraft.x + 'px';
+  textInput.style.top = textDraft.y + 'px';
+  textInput.style.height = Math.max(32, fontSize + 10) + 'px';
+  textInput.style.fontSize = Math.max(12, fontSize) + 'px';
+  textInput.style.color = annoColor;
+  textInput.style.display = 'block';
+  textInput.focus({ preventScroll: true });
+}
+function hideTextInput() {
+  textInput.style.display = 'none';
+  textInput.value = '';
+  textDraft = null;
+}
+function commitTextInput() {
+  cancelPendingText();
+  if (!textDraft) return;
+  const text = textInput.value.trim();
+  const shape = { kind: 'text', x: textDraft.x, y: textDraft.y, text, color: annoColor, fontSize };
+  hideTextInput();
+  if (text) commitAnnotation(shape);
+}
+function annotationPayload() {
+  commitTextInput();
+  return annotations.map((shape) => {
+    if (shape.kind === 'arrow') return { kind: 'arrow', x1: Math.round(shape.x1), y1: Math.round(shape.y1), x2: Math.round(shape.x2), y2: Math.round(shape.y2), color: shape.color, width: shape.width };
+    if (shape.kind === 'brush') return { kind: 'brush', points: shape.points.map((p) => ({ x: Math.round(p.x), y: Math.round(p.y) })), color: shape.color, width: shape.width };
+    if (shape.kind === 'text') return { kind: 'text', x: Math.round(shape.x), y: Math.round(shape.y), text: shape.text, color: shape.color, fontSize: shape.fontSize };
+    if (shape.kind === 'mosaic') return { kind: 'mosaic', points: shape.points.map((p) => ({ x: Math.round(p.x), y: Math.round(p.y) })), size: shape.size, block: shape.block };
+    return { kind: shape.kind, x: Math.round(shape.x), y: Math.round(shape.y), width: Math.round(shape.width), height: Math.round(shape.height), color: shape.color, lineWidth: shape.lineWidth };
+  });
 }
 function overlayUrl(kind, payload) {
   return 'ttool-overlay://' + kind + '?payload=' + encodeURIComponent(JSON.stringify(payload));
@@ -422,18 +852,21 @@ function setRect(r) {
   sel.style.top = rect.y + 'px';
   sel.style.width = rect.width + 'px';
   sel.style.height = rect.height + 'px';
+  redrawAnnotations();
   updateButtons();
   positionChip();
   renderHandles();
 }
 function renderHandles() {
   sel.querySelectorAll('.handle').forEach((n) => n.remove());
-  const pos = [[0,0],[50,0],[100,0],[0,50],[100,50],[0,100],[50,100],[100,100]];
+  const pos = [['nw',0,0],['n',50,0],['ne',100,0],['w',0,50],['e',100,50],['sw',0,100],['s',50,100],['se',100,100]];
   for (const p of pos) {
     const h = document.createElement('i');
     h.className = 'handle';
-    h.style.left = 'calc(' + p[0] + '% - 4.5px)';
-    h.style.top = 'calc(' + p[1] + '% - 4.5px)';
+    h.setAttribute('data-edge', p[0]);
+    h.style.left = 'calc(' + p[1] + '% - 4.5px)';
+    h.style.top = 'calc(' + p[2] + '% - 4.5px)';
+    h.style.cursor = cursorForEdge(p[0]);
     sel.appendChild(h);
   }
 }
@@ -452,9 +885,13 @@ function updateBar() {
 }
 function beginSelection(p) {
   selecting = true;
+  resizing = null;
+  discardAnnotations();
   completed = false;
   pendingInsideClick = false;
   bar.style.display = 'none';
+  hint.textContent = '拖拽选择区域，选区后拖动边框调整大小，Esc 取消';
+  setOverlayCursor('crosshair');
   start = p;
   setRect({ x: start.x, y: start.y, width: 0, height: 0 });
 }
@@ -463,19 +900,71 @@ function updateSelection(p) {
   const y = Math.min(start.y, p.y);
   setRect({ x, y, width: Math.abs(p.x - start.x), height: Math.abs(p.y - start.y) });
 }
+function beginResize(edge) {
+  if (!rect || !edge) return;
+  discardAnnotations();
+  redrawAnnotations();
+  resizing = { edge, origin: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } };
+  selecting = false;
+  completed = false;
+  pendingInsideClick = false;
+  bar.style.display = 'none';
+  hint.textContent = '拖动边框调整区域，松开完成';
+  setOverlayCursor(cursorForEdge(edge));
+}
+function updateResize(p) {
+  if (!resizing) return;
+  const edge = resizing.edge;
+  const origin = resizing.origin;
+  let left = origin.x;
+  let top = origin.y;
+  let right = origin.x + origin.width;
+  let bottom = origin.y + origin.height;
+  if (edge.includes('w')) left = clamp(p.x, 0, right);
+  if (edge.includes('e')) right = clamp(p.x, left, innerWidth);
+  if (edge.includes('n')) top = clamp(p.y, 0, bottom);
+  if (edge.includes('s')) bottom = clamp(p.y, top, innerHeight);
+  setRect({ x: left, y: top, width: right - left, height: bottom - top });
+}
+function finishResize(p) {
+  if (!resizing) return;
+  resizing = null;
+  completed = true;
+  hint.textContent = annotationHint();
+  updateBar();
+  updateHoverCursor(p);
+  updateCursorReticle(p, targetAtPoint(p));
+}
 function submit(action) {
   if (!isValid()) {
     updateButtons();
     return;
   }
   const resolved = action === 'default' ? META.defaultAction : action;
-  sendOverlay('select', { captureId: META.captureId, displayId: META.displayId, rect, action: resolved });
+  sendOverlay('select', { captureId: META.captureId, displayId: META.displayId, rect, action: resolved, annotations: annotationPayload() });
 }
 window.addEventListener('mousedown', (e) => {
-  if (isInteractive(e.target)) return;
   const p = { x: e.clientX, y: e.clientY };
+  updateCursorReticle(p, e.target);
+  if (isInteractive(e.target)) return;
   downPoint = p;
   movedSinceDown = false;
+  if (completed && isValid() && pointInRect(p, rect) && e.detail >= 2) {
+    e.preventDefault();
+    cancelPendingText();
+    return;
+  }
+  const edge = completed ? resizeEdgeForEvent(e.target, p) : '';
+  if (edge) {
+    e.preventDefault();
+    beginResize(edge);
+    return;
+  }
+  if (completed && isValid() && pointInRect(p, rect) && activeTool) {
+    e.preventDefault();
+    beginAnnotation(p);
+    return;
+  }
   if (completed && isValid() && pointInRect(p, rect)) {
     pendingInsideClick = true;
     return;
@@ -484,12 +973,34 @@ window.addEventListener('mousedown', (e) => {
 });
 window.addEventListener('mousemove', (e) => {
   const p = { x: e.clientX, y: e.clientY };
+  updateCursorReticle(p, e.target);
+  if (resizing) {
+    updateResize(p);
+    return;
+  }
+  if (drawingAnnotation) {
+    updateAnnotation(p);
+    return;
+  }
   if (downPoint && Math.hypot(p.x - downPoint.x, p.y - downPoint.y) > 4) movedSinceDown = true;
   if (pendingInsideClick && movedSinceDown && downPoint) beginSelection(downPoint);
-  if (!selecting || !start) return;
+  if (!selecting || !start) {
+    updateHoverCursor(p);
+    return;
+  }
   updateSelection(p);
 });
-window.addEventListener('mouseup', () => {
+window.addEventListener('mouseup', (e) => {
+  const p = { x: e.clientX, y: e.clientY };
+  updateCursorReticle(p, e.target);
+  if (resizing) {
+    finishResize(p);
+    return;
+  }
+  if (drawingAnnotation) {
+    finishAnnotation(p);
+    return;
+  }
   if (pendingInsideClick) {
     pendingInsideClick = false;
     return;
@@ -497,20 +1008,91 @@ window.addEventListener('mouseup', () => {
   if (!selecting) return;
   selecting = false;
   completed = true;
+  hint.textContent = annotationHint();
   updateBar();
+  updateCursorReticle(p, targetAtPoint(p));
 });
 window.addEventListener('dblclick', (e) => {
   const p = { x: e.clientX, y: e.clientY };
-  if (isInteractive(e.target) || movedSinceDown || selecting || !completed || !isValid() || !pointInRect(p, rect)) return;
+  updateCursorReticle(p, e.target);
+  cancelPendingText();
+  if (isInteractive(e.target) || movedSinceDown || selecting || resizing || drawingAnnotation || !completed || !isValid() || !pointInRect(p, rect)) return;
   submit('default');
 });
+window.addEventListener('mouseenter', (e) => {
+  updateCursorReticle({ x: e.clientX, y: e.clientY }, e.target);
+});
+window.addEventListener('mouseleave', () => {
+  cursorReticle.classList.add('hidden');
+});
 window.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+    e.preventDefault();
+    undoAnnotation();
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) {
+    e.preventDefault();
+    redoAnnotation();
+    return;
+  }
+  if (e.key === 'Escape' && drawingAnnotation) {
+    e.preventDefault();
+    drawingAnnotation = null;
+    redrawAnnotations();
+    hint.textContent = annotationHint();
+    return;
+  }
+  if (e.key === 'Escape' && (textDraft || textClickTimer)) {
+    e.preventDefault();
+    cancelPendingText();
+    hideTextInput();
+    return;
+  }
   if (e.key === 'Escape') sendOverlay('cancel', { captureId: META.captureId, reason: '截图已取消' });
 });
+textInput.addEventListener('keydown', (e) => {
+  e.stopPropagation();
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    commitTextInput();
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    hideTextInput();
+  }
+});
+textInput.addEventListener('blur', () => {
+  window.setTimeout(commitTextInput, 0);
+});
+colorInput.addEventListener('input', () => {
+  annoColor = colorInput.value || DEFAULT_ANNO_COLOR;
+  textInput.style.color = annoColor;
+});
+sizeRange.addEventListener('input', () => {
+  const value = Number(sizeRange.value) || 0;
+  if (activeTool === 'text') fontSize = clamp(Math.round(value), 14, 64);
+  else if (activeTool === 'mosaic') mosaicSize = clamp(Math.round(value), 12, 72);
+  else lineWidth = clamp(Math.round(value), 2, 16);
+  updateSizeControl();
+});
 document.getElementById('cancel').onclick = () => sendOverlay('cancel', { captureId: META.captureId, reason: '截图已取消' });
+bar.querySelectorAll('button[data-tool]').forEach((btn) => {
+  btn.onclick = () => setActiveTool(btn.getAttribute('data-tool'));
+});
+document.getElementById('undoAnno').onclick = () => {
+  undoAnnotation();
+};
+document.getElementById('redoAnno').onclick = () => {
+  redoAnnotation();
+};
+document.getElementById('clearAnno').onclick = () => {
+  if (!annotations.length) return;
+  applyAnnotationChange([]);
+};
 bar.querySelectorAll('button[data-action]').forEach((btn) => {
   btn.onclick = () => submit(btn.getAttribute('data-action'));
 });
+updateSizeControl();
 window.focus();
 </script>
 </body>
@@ -634,6 +1216,251 @@ async function captureDisplayRegion(display, rect) {
   const cropped = img.crop(crop)
   const croppedSize = cropped.getSize()
   return { imageDataUrl: cropped.toDataURL(), width: croppedSize.width, height: croppedSize.height }
+}
+
+function normalizeOverlayAnnotations(raw, rect) {
+  if (!Array.isArray(raw) || !rect) return []
+  const maxW = Math.max(1, Number(rect.width) || 1)
+  const maxH = Math.max(1, Number(rect.height) || 1)
+  const items = []
+  const safeColor = (value) => /^#[0-9a-f]{6}$/i.test(String(value || '')) ? String(value) : '#ff4d4f'
+  const safePoint = (value) => ({
+    x: clamp(Math.round(Number(value && value.x) || 0), 0, maxW),
+    y: clamp(Math.round(Number(value && value.y) || 0), 0, maxH),
+  })
+  for (const item of raw.slice(0, 120)) {
+    const kind = item && ['arrow', 'rect', 'circle', 'brush', 'text', 'mosaic'].includes(item.kind) ? item.kind : ''
+    if (!kind) continue
+    if (kind === 'arrow') {
+      const a = safePoint({ x: item.x1, y: item.y1 })
+      const b = safePoint({ x: item.x2, y: item.y2 })
+      if (Math.hypot(b.x - a.x, b.y - a.y) < 4) continue
+      items.push({ kind, x1: a.x, y1: a.y, x2: b.x, y2: b.y, color: safeColor(item.color), width: clamp(Math.round(Number(item.width) || 4), 1, 24) })
+      continue
+    }
+    if (kind === 'rect' || kind === 'circle') {
+      const x1 = Number(item.x) || 0
+      const y1 = Number(item.y) || 0
+      const x2 = x1 + (Number(item.width) || 0)
+      const y2 = y1 + (Number(item.height) || 0)
+      const left = clamp(Math.round(Math.min(x1, x2)), 0, maxW)
+      const top = clamp(Math.round(Math.min(y1, y2)), 0, maxH)
+      const right = clamp(Math.round(Math.max(x1, x2)), 0, maxW)
+      const bottom = clamp(Math.round(Math.max(y1, y2)), 0, maxH)
+      const width = right - left
+      const height = bottom - top
+      if (width < 4 || height < 4) continue
+      items.push({ kind, x: left, y: top, width, height, color: safeColor(item.color), lineWidth: clamp(Math.round(Number(item.lineWidth) || 4), 1, 24) })
+      continue
+    }
+    if (kind === 'brush' || kind === 'mosaic') {
+      const points = Array.isArray(item.points) ? item.points.slice(0, 600).map(safePoint) : []
+      if (points.length < 2) continue
+      if (kind === 'brush') {
+        items.push({ kind, points, color: safeColor(item.color), width: clamp(Math.round(Number(item.width) || 4), 1, 24) })
+      } else {
+        const size = clamp(Math.round(Number(item.size) || 32), 8, 96)
+        items.push({ kind, points, size, block: clamp(Math.round(Number(item.block) || Math.max(6, size / 3)), 4, 48) })
+      }
+      continue
+    }
+    const text = String(item.text || '').trim().slice(0, 120)
+    if (!text) continue
+    const point = safePoint(item)
+    items.push({ kind, x: point.x, y: point.y, text, color: safeColor(item.color), fontSize: clamp(Math.round(Number(item.fontSize) || 28), 10, 96) })
+  }
+  return items
+}
+
+function annotatedCaptureHtml(payload) {
+  const json = JSON.stringify(payload)
+  return `<!doctype html>
+<html>
+<head><meta charset="utf-8" /></head>
+<body>
+<script>
+const payload = ${json};
+function scaledPoint(point, scaleX, scaleY) {
+  return { x: point.x * scaleX, y: point.y * scaleY };
+}
+function drawArrow(ctx, shape, scaleX, scaleY) {
+  const a = { x: shape.x1 * scaleX, y: shape.y1 * scaleY };
+  const b = { x: shape.x2 * scaleX, y: shape.y2 * scaleY };
+  const width = Math.max(1, (shape.width || 4) * ((scaleX + scaleY) / 2));
+  const angle = Math.atan2(b.y - a.y, b.x - a.x);
+  const head = Math.max(12, width * 5);
+  ctx.save();
+  ctx.strokeStyle = shape.color || '#ff4d4f';
+  ctx.fillStyle = shape.color || '#ff4d4f';
+  ctx.lineWidth = width;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(b.x, b.y);
+  ctx.lineTo(b.x - head * Math.cos(angle - Math.PI / 6), b.y - head * Math.sin(angle - Math.PI / 6));
+  ctx.lineTo(b.x - head * Math.cos(angle + Math.PI / 6), b.y - head * Math.sin(angle + Math.PI / 6));
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+function drawBrush(ctx, shape, scaleX, scaleY) {
+  const points = (shape.points || []).map((p) => scaledPoint(p, scaleX, scaleY));
+  if (points.length < 2) return;
+  ctx.save();
+  ctx.strokeStyle = shape.color || '#ff4d4f';
+  ctx.lineWidth = Math.max(1, (shape.width || 4) * ((scaleX + scaleY) / 2));
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+  for (const p of points.slice(1)) ctx.lineTo(p.x, p.y);
+  ctx.stroke();
+  ctx.restore();
+}
+function drawMosaicPatch(ctx, cx, cy, size, blockSize) {
+  const radius = Math.max(4, size / 2);
+  const x = Math.max(0, Math.floor(cx - radius));
+  const y = Math.max(0, Math.floor(cy - radius));
+  const w = Math.min(ctx.canvas.width - x, Math.ceil(radius * 2));
+  const h = Math.min(ctx.canvas.height - y, Math.ceil(radius * 2));
+  if (w <= 0 || h <= 0) return;
+  const block = Math.max(4, Math.round(blockSize));
+  const data = ctx.getImageData(x, y, w, h);
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.clip();
+  for (let by = 0; by < h; by += block) {
+    for (let bx = 0; bx < w; bx += block) {
+      let r = 0, g = 0, b = 0, count = 0;
+      for (let py = by; py < Math.min(by + block, h); py++) {
+        for (let px = bx; px < Math.min(bx + block, w); px++) {
+          const i = (py * w + px) * 4;
+          r += data.data[i];
+          g += data.data[i + 1];
+          b += data.data[i + 2];
+          count++;
+        }
+      }
+      if (!count) continue;
+      ctx.fillStyle = 'rgb(' + Math.round(r / count) + ',' + Math.round(g / count) + ',' + Math.round(b / count) + ')';
+      ctx.fillRect(x + bx, y + by, Math.min(block, w - bx), Math.min(block, h - by));
+    }
+  }
+  ctx.restore();
+}
+function drawMosaic(ctx, shape, scaleX, scaleY) {
+  const points = (shape.points || []).map((p) => scaledPoint(p, scaleX, scaleY));
+  if (points.length < 2) return;
+  const scale = (scaleX + scaleY) / 2;
+  const size = Math.max(8, (shape.size || 32) * scale);
+  const sourceBlock = shape.block || Math.max(6, (shape.size || 32) / 3);
+  const block = Math.max(4, sourceBlock * scale);
+  const step = Math.max(4, size / 3);
+  for (let i = 1; i < points.length; i++) {
+    const prev = points[i - 1];
+    const next = points[i];
+    const dist = Math.max(1, Math.hypot(next.x - prev.x, next.y - prev.y));
+    const count = Math.max(1, Math.ceil(dist / step));
+    for (let j = 0; j <= count; j++) {
+      const t = j / count;
+      drawMosaicPatch(ctx, prev.x + (next.x - prev.x) * t, prev.y + (next.y - prev.y) * t, size, block);
+    }
+  }
+}
+function drawShape(ctx, shape, scaleX, scaleY) {
+  if (shape.kind === 'arrow') {
+    drawArrow(ctx, shape, scaleX, scaleY);
+    return;
+  }
+  if (shape.kind === 'brush') {
+    drawBrush(ctx, shape, scaleX, scaleY);
+    return;
+  }
+  if (shape.kind === 'mosaic') {
+    drawMosaic(ctx, shape, scaleX, scaleY);
+    return;
+  }
+  ctx.save();
+  ctx.strokeStyle = shape.color || '#ff4d4f';
+  ctx.fillStyle = shape.color || '#ff4d4f';
+  ctx.lineWidth = Math.max(1, (shape.lineWidth || 4) * ((scaleX + scaleY) / 2));
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  const x = shape.x * scaleX;
+  const y = shape.y * scaleY;
+  const width = (shape.width || 0) * scaleX;
+  const height = (shape.height || 0) * scaleY;
+  if (shape.kind === 'rect') {
+    ctx.strokeRect(x, y, width, height);
+  } else if (shape.kind === 'circle') {
+    ctx.beginPath();
+    ctx.ellipse(x + width / 2, y + height / 2, Math.max(0.5, width / 2), Math.max(0.5, height / 2), 0, 0, Math.PI * 2);
+    ctx.stroke();
+  } else if (shape.kind === 'text') {
+    ctx.font = Math.max(10, (shape.fontSize || 28) * scaleY) + 'px system-ui,-apple-system,Segoe UI,sans-serif';
+    ctx.textBaseline = 'top';
+    ctx.fillText(shape.text || '', x, y);
+  }
+  ctx.restore();
+}
+window.__renderAnnotatedCapture = new Promise((resolve, reject) => {
+  const img = new Image();
+  img.onload = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(payload.width));
+    canvas.height = Math.max(1, Math.round(payload.height));
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const scaleX = canvas.width / Math.max(1, payload.sourceWidth);
+    const scaleY = canvas.height / Math.max(1, payload.sourceHeight);
+    for (const shape of payload.annotations || []) drawShape(ctx, shape, scaleX, scaleY);
+    resolve(canvas.toDataURL('image/png'));
+  };
+  img.onerror = () => reject(new Error('标注合成失败'));
+  img.src = payload.imageDataUrl;
+});
+</script>
+</body>
+</html>`
+}
+
+async function renderAnnotatedCapture(shot, annotations, sourceRect) {
+  if (!annotations.length) return shot
+  const renderWin = new BrowserWindow({
+    width: Math.min(1200, Math.max(1, shot.width)),
+    height: Math.min(900, Math.max(1, shot.height)),
+    frame: false,
+    show: false,
+    paintWhenInitiallyHidden: true,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  })
+  try {
+    hardenWebContents(renderWin.webContents)
+    const html = annotatedCaptureHtml({
+      imageDataUrl: shot.imageDataUrl,
+      width: shot.width,
+      height: shot.height,
+      sourceWidth: sourceRect.width,
+      sourceHeight: sourceRect.height,
+      annotations,
+    })
+    await renderWin.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
+    const imageDataUrl = await renderWin.webContents.executeJavaScript('window.__renderAnnotatedCapture', true)
+    const img = dataUrlImage(imageDataUrl)
+    const size = img.getSize()
+    return { imageDataUrl, width: size.width, height: size.height }
+  } finally {
+    if (!renderWin.isDestroyed()) renderWin.destroy()
+  }
 }
 
 function deliverCaptureToEditor(payload) {
@@ -883,11 +1710,13 @@ async function completeOverlaySelection(payload) {
     return { ok: false, error: '选区过小' }
   }
   const action = normalizeOverlayAction(payload.action, activeCapture.action)
+  const annotations = normalizeOverlayAnnotations(payload.annotations, rect)
   closeActiveOverlayWindows()
   activeCapture = null
   try {
     await sleep(90)
-    const shot = await captureDisplayRegion(display, rect)
+    let shot = await captureDisplayRegion(display, rect)
+    shot = await renderAnnotatedCapture(shot, annotations, rect)
     rememberScreenshot(shot.imageDataUrl, { displayId: display.id })
     if (action === 'pin') {
       const result = createPinWindow(shot.imageDataUrl, { displayId: display.id, sourceRect: rect })
@@ -904,20 +1733,9 @@ async function completeOverlaySelection(payload) {
       if (!result.canceled) emitScreenshotStatus(result.ok ? 'info' : 'error', result.ok ? '图片已保存' : result.error || '保存失败')
       return result.ok || result.canceled ? { ok: true, canceled: result.canceled } : { ok: false, error: result.error }
     }
-    const capture = {
-      id: 'shot_' + Date.now().toString(36),
-      source: 'screenshot',
-      imageDataUrl: shot.imageDataUrl,
-      width: shot.width,
-      height: shot.height,
-      createdAt: Date.now(),
-      displayId: display.id,
-    }
-    const copyResult = copyImageToClipboard(shot.imageDataUrl)
-    if (!copyResult.ok) console.warn('[screenshot] copy captured image to clipboard failed:', copyResult.error || 'unknown error')
-    createCaptureToast(capture, { displayId: display.id })
-    emitScreenshotStatus(copyResult.ok ? 'info' : 'error', copyResult.ok ? '截图已完成，已复制到剪贴板' : '截图已完成，复制到剪贴板失败')
-    return { ok: true }
+    const result = copyImageToClipboard(shot.imageDataUrl)
+    emitScreenshotStatus(result.ok ? 'info' : 'error', result.ok ? '图片已复制' : result.error || '复制失败')
+    return result
   } catch (e) {
     const msg = e && e.message ? e.message : '截图失败，请重试'
     emitScreenshotStatus('error', msg)
@@ -1076,6 +1894,7 @@ function createPinWindow(dataUrl, options = {}) {
     alwaysOnTop: true,
     hasShadow: true,
     show: false,
+    icon: APP_ICON,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -1239,6 +2058,7 @@ function createWindow() {
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
     backgroundColor: '#00000000',
     transparent: process.platform === 'darwin',
+    icon: APP_ICON,
     show: false,
     ...vibrancyOpts,
     webPreferences: {
@@ -1284,6 +2104,12 @@ function createWindow() {
   } else {
     win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
   }
+
+  win.on('close', (e) => {
+    if (isQuitting) return
+    e.preventDefault()
+    void requestMainWindowClose()
+  })
 
   win.on('closed', () => {
     win = null
@@ -1521,13 +2347,14 @@ ipcMain.handle('win:toggleMaximize', () => {
   if (!win) return
   win.isMaximized() ? win.unmaximize() : win.maximize()
 })
-ipcMain.handle('win:close', () => win && win.close())
+ipcMain.handle('win:close', () => requestMainWindowClose())
 
 app.whenReady().then(() => {
   setupPlugins({ ipcMain, app, dialog, getWin: () => win })
   // 宿主能力：通用 net（TCP/TLS）+ 按插件命名空间的 storage + safeStorage 加密 secrets
   host = setupHost({ ipcMain, app, getWin: () => win })
   createWindow()
+  createTray()
   createLauncher() // 预创建启动器小窗（隐藏），首次唤起即时
   // 注册全局热键切换快速启动器小窗：首选 Alt+Space，并叠加一个不易被输入法占用的备用键。
   // Alt+Space 常被输入法/其它软件抢占（注册时灵时不灵），故同时注册 Ctrl+Alt+Space 兜底。
@@ -1544,12 +2371,21 @@ app.whenReady().then(() => {
   else console.warn('[ttool] 全局热键全部注册失败（可能被其它程序占用），可在任务栏图标或主窗内唤起')
   initializeScreenshotShortcuts()
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (!win || win.isDestroyed()) createWindow()
+    else showMainWindow()
   })
+})
+
+app.on('before-quit', () => {
+  isQuitting = true
 })
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
+  if (tray) {
+    tray.destroy()
+    tray = null
+  }
   if (host) host.closeAll() // 回收全部 net 连接并停掉 idle 扫描
 })
 
