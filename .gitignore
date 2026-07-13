@@ -5,6 +5,9 @@ release
 *.log
 .vite
 
+# Codex 本地配置、运行日志和图片中间产物
+.codex/
+
 # 设计稿原型参考（不纳入版本库）
 design-reference/
 scripts/_ssr-bundle.mjs
