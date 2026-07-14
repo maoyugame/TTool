@@ -35,7 +35,7 @@
 
 ## 技术栈
 
-- **核心**：Vite + React 18 + TypeScript（框架无关的 UI 与工具逻辑）
+- **核心**：Vite + React 19 + TypeScript（框架无关的 UI 与工具逻辑）
 - **桌面壳**：Electron（无边框 + 各平台毛玻璃质感 + IPC 桥接桌面能力）
 - 无第三方 UI 库；样式以内联 style + 设计令牌还原设计稿。
 
@@ -71,14 +71,25 @@ src/
 npm install            # 安装依赖
 npm run dev            # ① 纯浏览器开发（默认入口，开箱即用） http://localhost:5173
 npm run build          # 类型检查 + 生产打包到 dist/
+npm run check          # 类型、更新器、发布配置、SSR 与生产构建全检查
 npm run preview        # 预览生产构建
 npm run typecheck      # 仅类型检查
 npm run electron:dev   # ② 桌面壳开发（自动起 vite + electron）
 npm run electron:build # 打包桌面应用（electron-builder）
+npm run electron:build:win # 构建 Windows NSIS 自动更新安装包
 ```
 
 > **Electron 二进制**：首次安装若网络受限可能跳过了 Electron 运行时二进制下载（仅影响 `electron:*`，不影响 web 构建）。需要桌面壳时执行 `node node_modules/electron/install.js` 重新下载，或设置镜像 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/` 后重装。
 > web 构建（`dev` / `build` / `preview`）不依赖该二进制，始终可用。
+
+## Windows 自动更新与发布
+
+- Windows 安装版会在设置页检查 GitHub Releases，发现新版本后由用户确认下载并重启安装；开发态不联网检查。
+- 推送与 `package.json` 版本一致的 `v*.*.*` tag 后，GitHub Actions 会执行全检查、构建 NSIS、校验 `latest.yml`/SHA-512/blockmap，再发布非草稿 Release。
+- 当前发布仓库按内部私有仓库配置，客户端需由管理员提供只读 token，推荐放在 `TTOOL_UPDATE_GH_TOKEN` 用户环境变量中；凭证不会写入源码或安装包。
+- 第一个包含更新器的 `0.2.0` 仍需手工安装；之后才可验证 `0.2.0 → 0.2.1` 自动更新。
+
+完整发布、签名、回滚和真机验收流程见 [`docs/WINDOWS_UPDATE.md`](docs/WINDOWS_UPDATE.md)，Electron/Tauri 与依赖升级评估见 [`docs/RUNTIME_ASSESSMENT.md`](docs/RUNTIME_ASSESSMENT.md)。
 
 ## 内置工具
 
@@ -158,12 +169,9 @@ npm run electron:build # 打包桌面应用（electron-builder）
 - 需要剪贴板 / 打开应用 / 文件选择？用 `useToolbox().copy(text, label)` 或 `platform.xxx`，绝不要直接 import electron。
 - 工具输入想跨标签切换保活？用 `usePersistentState('myTool.x', 初始值)` 代替 `useState`。
 
-## 如何接入新平台（例：Tauri）
+## 如何评估新平台（例：Tauri）
 
-1. 新建 `src/platform/tauri.ts`，实现 `Platform` 接口（用 `@tauri-apps/api` 实现 `copyText / openExternalApp / pickAppPath / window`）。
-2. 在 `src/platform/index.ts` 的 `detect()` 中加入 `if (window.__TAURI__) return createTauriPlatform()`。
-
-核心应用与全部工具**无需任何改动**。
+`src/platform/` 允许复用 React 核心 UI，但当前桌面宿主还包含插件安装/加载、TCP/TLS、数据库驱动、safeStorage、截图、多窗口和全局热键。迁移到 Tauri 不只是新增一个适配器，而是需要用 Rust/Tauri 插件重写这些宿主能力并重新验证插件兼容与安全边界。当前决策是继续 Electron；迁移触发条件与成本见 [`docs/RUNTIME_ASSESSMENT.md`](docs/RUNTIME_ASSESSMENT.md)。
 
 ## 翻译服务
 

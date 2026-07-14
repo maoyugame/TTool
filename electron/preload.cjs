@@ -32,6 +32,18 @@ contextBridge.exposeInMainWorld('ttool', {
     ipcRenderer.on('ttool:open-tool', h)
     return () => ipcRenderer.removeListener('ttool:open-tool', h)
   },
+  // 宿主版本更新（仅主窗口、Windows 安装版可用；主进程会再次校验调用来源）。
+  updates: {
+    getState: () => ipcRenderer.invoke('updates:getState'),
+    check: () => ipcRenderer.invoke('updates:check'),
+    download: () => ipcRenderer.invoke('updates:download'),
+    install: () => ipcRenderer.invoke('updates:install'),
+    onState: (cb) => {
+      const h = (_e, state) => cb(state)
+      ipcRenderer.on('ttool:update-state', h)
+      return () => ipcRenderer.removeListener('ttool:update-state', h)
+    },
+  },
   // 快速启动器路由（小窗用）
   launcher: {
     hide: () => ipcRenderer.invoke('launcher:hide'),

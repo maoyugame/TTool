@@ -14,7 +14,7 @@ TTool 是一个跨平台桌面多功能工具平台，采用指挥官风格启�
 
 ## 技术栈
 
-- 前端：Vite + React 18 + TypeScript。
+- 前端：Vite + React 19 + TypeScript。
 - 桌面壳：Electron。
 - 插件 SDK：`@maoyugames/ttool-sdk`，源码位于 `packages/sdk/`。
 - 插件形态：内置工具与外部插件并存。

@@ -15,6 +15,13 @@ interface TToolBridge {
   onSummon: (cb: () => void) => () => void
   onWindowFocus: (cb: () => void) => () => void
   onOpenTool: (cb: (id: string) => void) => () => void
+  updates: {
+    getState: () => Promise<import('./platform/types').UpdateState>
+    check: () => Promise<import('./platform/types').UpdateCommandResult>
+    download: () => Promise<import('./platform/types').UpdateCommandResult>
+    install: () => Promise<import('./platform/types').UpdateCommandResult>
+    onState: (cb: (state: import('./platform/types').UpdateState) => void) => () => void
+  }
   launcher: {
     hide: () => Promise<boolean>
     openTool: (id: string) => Promise<boolean>

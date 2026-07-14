@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTheme } from '../theme/ThemeContext'
 import { useToolbox } from '../store/toolbox'
 import { platform } from '../platform'
@@ -6,8 +6,31 @@ import { kbd } from '../platform/shortcuts'
 import { toolCount } from '../tools/registry'
 import { isFileSearchOn, setFileSearchOn } from '../store/fileSearch'
 import packageInfo from '../../package.json'
+import type { UpdateState } from '../platform/types'
 
 const APP_VERSION = packageInfo.version
+
+function formatBytes(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  const index = Math.min(units.length - 1, Math.floor(Math.log(value) / Math.log(1024)))
+  return `${(value / 1024 ** index).toFixed(index === 0 ? 0 : 1)} ${units[index]}`
+}
+
+function updateStatusText(state: UpdateState) {
+  switch (state.status) {
+    case 'disabled': return '开发环境不检查更新，安装版中自动启用'
+    case 'unsupported': return '当前平台暂未启用自动更新'
+    case 'checking': return '正在检查更新…'
+    case 'up-to-date': return '当前已是最新版本'
+    case 'available': return `发现新版本 v${state.availableVersion || ''}`
+    case 'downloading': return `正在下载 ${state.progress?.percent.toFixed(1) || '0.0'}%`
+    case 'downloaded': return `v${state.availableVersion || ''} 已下载，等待重启安装`
+    case 'installing': return '正在退出并安装更新…'
+    case 'error': return state.error || '检查更新失败'
+    default: return '自动更新已就绪'
+  }
+}
 
 function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
   return (
@@ -45,6 +68,47 @@ export function SettingsPanel() {
   const { settingsOpen, closeSettings, devMode, setDevMode } = useToolbox()
   const { theme, setTheme } = useTheme()
   const [fileSearch, setFileSearch] = useState(isFileSearchOn())
+  const [updateState, setUpdateState] = useState<UpdateState | null>(null)
+  const [updateBusy, setUpdateBusy] = useState(false)
+  const [updateActionError, setUpdateActionError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const api = platform.updates
+    if (!api) return
+    let active = true
+    void api.getState()
+      .then((state) => { if (active) setUpdateState(state) })
+      .catch(() => { if (active) setUpdateActionError('无法读取更新状态') })
+    const off = api.onState((state) => {
+      if (!active) return
+      setUpdateState(state)
+      if (state.status !== 'error') setUpdateActionError(null)
+    })
+    return () => {
+      active = false
+      off()
+    }
+  }, [])
+
+  const runUpdateAction = async () => {
+    const api = platform.updates
+    if (!api || !updateState || updateBusy) return
+    setUpdateBusy(true)
+    setUpdateActionError(null)
+    try {
+      const result = updateState.status === 'available'
+        ? await api.download()
+        : updateState.status === 'downloaded'
+          ? await api.install()
+          : await api.check()
+      if (!result.ok && result.error !== 'CANCELED') setUpdateActionError(result.error || '更新操作失败')
+    } catch {
+      setUpdateActionError('更新服务暂时不可用')
+    } finally {
+      setUpdateBusy(false)
+    }
+  }
+
   if (!settingsOpen) return null
 
   const seg = (val: 'dark' | 'light', label: string) => {
@@ -97,6 +161,44 @@ export function SettingsPanel() {
           </>
         )}
 
+        {/* 宿主更新（不属于插件 SDK，仅 Windows 安装版启用） */}
+        {platform.updates && updateState && (
+          <>
+            <div style={{ fontSize: 11.5, fontWeight: 680, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 10 }}>更新</div>
+            <div style={{ ...rowStyle, flexDirection: 'column', alignItems: 'stretch', gap: 10, marginBottom: 22 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, color: 'var(--text)' }}>{updateStatusText(updateState)}</div>
+                  {updateState.status === 'downloading' && updateState.progress && (
+                    <div style={{ fontSize: 11.5, color: 'var(--text3)', marginTop: 3 }}>
+                      {formatBytes(updateState.progress.transferred)} / {formatBytes(updateState.progress.total)} · {formatBytes(updateState.progress.bytesPerSecond)}/s
+                    </div>
+                  )}
+                  {updateActionError && <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 3 }}>{updateActionError}</div>}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { void runUpdateAction() }}
+                  disabled={updateBusy || !updateState.enabled || ['checking', 'downloading', 'installing'].includes(updateState.status)}
+                  style={{ border: '1px solid var(--hair2)', borderRadius: 8, padding: '7px 12px', background: 'var(--accentSoft)', color: 'var(--accent)', cursor: updateBusy || !updateState.enabled ? 'default' : 'pointer', fontSize: 12.5, fontWeight: 650, opacity: updateBusy || !updateState.enabled ? .55 : 1, whiteSpace: 'nowrap' }}
+                >
+                  {updateState.status === 'available' ? '下载更新' : updateState.status === 'downloaded' ? '重启更新' : '检查更新'}
+                </button>
+              </div>
+              {updateState.progress && updateState.status === 'downloading' && (
+                <div style={{ height: 5, borderRadius: 3, background: 'var(--pill)', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${updateState.progress.percent}%`, background: 'var(--accent)', transition: 'width .2s' }} />
+                </div>
+              )}
+              {updateState.releaseNotes && ['available', 'downloading', 'downloaded'].includes(updateState.status) && (
+                <div style={{ maxHeight: 110, overflowY: 'auto', whiteSpace: 'pre-wrap', fontSize: 11.5, lineHeight: 1.55, color: 'var(--text2)', paddingTop: 2 }}>
+                  {updateState.releaseNotes}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
         {/* 快捷键 */}
         <div style={{ fontSize: 11.5, fontWeight: 680, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 10 }}>快捷键</div>
         <div style={{ padding: '4px 12px', borderRadius: 12, background: 'var(--surface2)', border: '1px solid var(--hair)', marginBottom: 22 }}>
@@ -130,7 +232,7 @@ export function SettingsPanel() {
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span style={labelMuted}>版本</span>
-            <span style={{ fontSize: 13, color: 'var(--text)' }}>v{APP_VERSION}</span>
+            <span style={{ fontSize: 13, color: 'var(--text)' }}>v{updateState?.currentVersion || APP_VERSION}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span style={labelMuted}>工具数量</span>

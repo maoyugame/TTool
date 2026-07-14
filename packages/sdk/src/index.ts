@@ -56,6 +56,7 @@ interface SDK {
   useRedis(): RedisHook
   /** MongoDB 便利层（自 1.3.0，EJSON）。 */
   useMongo(): MongoHook
+  /** 插件可见的宿主能力白名单；截图和宿主版本更新等 first-party bridge 不在此暴露。 */
   platform: {
     readonly kind: 'web' | 'electron' | 'tauri'
     readonly isDesktop: boolean

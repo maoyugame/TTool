@@ -7,6 +7,7 @@ const fs = require('node:fs')
 const { spawn } = require('node:child_process')
 const { setupPlugins } = require('./plugins.cjs')
 const { setupHost } = require('./host/index.cjs')
+const { setupUpdater } = require('./updater.cjs')
 const { searchFiles, searchDeep } = require('./filesearch.cjs')
 
 // 固定应用名，确保 userData（插件目录）路径稳定一致（dev 下默认会变成 "Electron"）。
@@ -17,6 +18,7 @@ const DEV_URL = process.env.TOOLBOX_DEV_URL
 const APP_ICON = path.join(__dirname, '..', 'assets', 'icon', process.platform === 'win32' ? 'app.ico' : 'app.png')
 let win = null
 let host = null // 宿主能力（net / storage / secrets），whenReady 后初始化
+let updaterHost = null // Windows NSIS 自动更新（仅安装版启用）
 let launcher = null // 快速启动器小窗（Spotlight 式悬浮窗）
 let tray = null
 let isQuitting = false
@@ -2353,6 +2355,13 @@ app.whenReady().then(() => {
   setupPlugins({ ipcMain, app, dialog, getWin: () => win })
   // 宿主能力：通用 net（TCP/TLS）+ 按插件命名空间的 storage + safeStorage 加密 secrets
   host = setupHost({ ipcMain, app, getWin: () => win })
+  updaterHost = setupUpdater({
+    app,
+    ipcMain,
+    dialog,
+    getWin: () => win,
+    markQuitting: () => { isQuitting = true },
+  })
   createWindow()
   createTray()
   createLauncher() // 预创建启动器小窗（隐藏），首次唤起即时
@@ -2382,6 +2391,10 @@ app.on('before-quit', () => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
+  if (updaterHost) {
+    updaterHost.dispose()
+    updaterHost = null
+  }
   if (tray) {
     tray.destroy()
     tray = null

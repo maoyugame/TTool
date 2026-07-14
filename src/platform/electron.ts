@@ -58,6 +58,9 @@ export function createElectronPlatform(bridge: NonNullable<Window['ttool']>): Pl
       readBundle: (id) => bridge.plugins.readBundle(id),
     },
 
+    // 宿主应用更新不进入 TToolSDK，仅供宿主设置页使用。
+    updates: bridge.updates,
+
     // 宿主能力：通用 net / 命名空间 storage / 加密 secrets / 数据库便利层。
     // bridge.* 已用 types.ts 的权威类型声明（见 vite-env.d.ts），无需断言，漂移会被 typecheck 拦下。
     net: bridge.net,

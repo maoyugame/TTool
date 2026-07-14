@@ -6,7 +6,7 @@
 ## 项目简介
 
 TTool 是跨平台桌面**多功能工具平台 + 可插拔工具插件系统**。
-- 技术栈：Vite + React 18 + TypeScript（核心）+ Electron（桌面壳）。
+- 技术栈：Vite + React 19 + TypeScript（核心）+ Electron（桌面壳）。
 - 两种工具：**内置工具**（编译期，随宿主打包，见 `TOOLS.md`）与**外部插件**（运行期，独立项目独立构建、从 GitHub/本地动态安装，见 `PLUGINS.md`）。
 - 品牌命名：产品/应用 **TTool**；SDK 包 `@maoyugames/ttool-sdk`；运行时全局 `TToolSDK`；预加载桥 `window.ttool`；应用名/存储前缀 `ttool`。内部 React 名（`useToolbox`/`ToolboxProvider` 等）保持不变，不属品牌面。
 

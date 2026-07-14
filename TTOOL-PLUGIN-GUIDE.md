@@ -52,11 +52,13 @@ TTool 是一个跨平台桌面工具平台（Electron + React）。**插件 = �
   },
   "devDependencies": {
     "@maoyugames/ttool-sdk": "^1.3.0",
-    "@vitejs/plugin-react": "^4.3.1",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "typescript": "^5.4.5",
-    "vite": "^5.2.11"
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "typescript": "^5.9.3",
+    "vite": "^8.1.4"
   }
 }
 ```
@@ -196,7 +198,7 @@ defineTool({ id: 'xxx', name: '我的工具', desc: '一句话描述', glyph: '�
   - `useRedis()` → `{ available, connect(config), command(connId, args[], {binary?}), pipeline(connId, cmds[]), close(connId), ping(connId) }`（RESP2；二进制值用 `binary:true` 取 `Uint8Array`）
   - `useMongo()` → `{ available, connect(config), find/countDocuments/aggregate/distinct/insertOne/insertMany/updateOne/updateMany/replaceOne/deleteOne/deleteMany/listDatabases/listCollections/listIndexes/createIndex/dropIndex/runCommand(connId, …), close(connId), ping(connId) }`（值用 Extended JSON，如 `{$oid}`/`{$date}`）
   - **桌面端已实现并经真实数据库验收**（MySQL/Redis/MongoDB，自 SDK 1.3.0）；**web 下** `available` 为 `false`、调用返回 `{ok:false,code:'NO_DB'}`，**务必先判 `available` 再使用**。统一错误码、类型保真（大整数/DECIMAL/JSON→字符串、BLOB→Uint8Array、Mongo EJSON canonical 保精度）、结果体量封顶等语义见仓库 `HOST-DB-SPEC.md`。
-- **platform**（宿主能力裁剪子集）：`kind` / `isDesktop` / `copyText` / `openExternalApp` / `translate?` / `net?` / `storage?` / `secrets?` / `db?`（后几者为上述 hooks 的底层 API，一般直接用 hooks 即可）。截图/贴图属于宿主内置工具的 first-party 桌面桥接，不是 SDK API；插件不可依赖 `window.ttool.screenshot` 或其它未列出的宿主内部能力。
+- **platform**（宿主能力裁剪子集）：`kind` / `isDesktop` / `copyText` / `openExternalApp` / `translate?` / `net?` / `storage?` / `secrets?` / `db?`（后几者为上述 hooks 的底层 API，一般直接用 hooks 即可）。截图/贴图与宿主版本更新属于 first-party 桌面桥接，不是 SDK API；插件不可依赖 `window.ttool.screenshot`、`window.ttool.updates` 或其它未列出的宿主内部能力。
 
 配色与排版**一律用 CSS 变量**（自动适配深/浅色）：`var(--text)` / `var(--text2)` / `var(--text3)` / `var(--surface)` / `var(--surface2)` / `var(--hair)` / `var(--hair2)` / `var(--field)` / `var(--fieldHair)` / `var(--accent)` / `var(--accentSoft)` / `var(--good)` / `var(--pill)`。
 

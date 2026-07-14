@@ -5,6 +5,7 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron')
 const path = require('node:path')
 const fs = require('node:fs')
 const { setupPlugins } = require('../electron/plugins.cjs')
+const { setupUpdater } = require('../electron/updater.cjs')
 
 app.setName('ttool')
 
@@ -120,6 +121,14 @@ app.whenReady().then(async () => {
       sandbox: false,
     },
   })
+  const updaterHost = setupUpdater({
+    app,
+    ipcMain,
+    dialog,
+    getWin: () => win,
+    markQuitting: () => {},
+    autoCheck: false,
+  })
   await win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
   await scenario(win)
   const img = await win.webContents.capturePage()
@@ -128,5 +137,6 @@ app.whenReady().then(async () => {
   const out = path.join(dir, 'cap-' + VIEW + '.jpg')
   fs.writeFileSync(out, img.toJPEG(82))
   console.log('CAPTURED ' + out + ' (' + fs.statSync(out).size + ' bytes)')
+  updaterHost.dispose()
   app.quit()
 })

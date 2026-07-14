@@ -1,40 +1,52 @@
 {
   "name": "ttool",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "TTool — 跨平台桌面多功能工具集 + 可插拔工具插件平台（指挥官风格启动台 + 标签工作区）",
+  "author": "maoyugame",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/maoyugame/TTool.git"
+  },
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "check": "npm run typecheck && npm run test:updater && npm run test:plugins && npm run release:check && npm run smoke && npm run build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "smoke": "node scripts/ssr-smoke.mjs",
+    "test:updater": "node scripts/updater-test.cjs",
+    "test:plugins": "node scripts/plugin-smoke.cjs",
+    "release:check": "node scripts/release-check.mjs",
+    "release:check:artifacts": "node scripts/release-check.mjs --artifacts release",
     "electron": "electron .",
     "electron:dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && cross-env TOOLBOX_DEV_URL=http://localhost:5173 electron .\"",
-    "electron:build": "npm run build && electron-builder"
+    "electron:build": "npm run build && electron-builder",
+    "electron:build:win": "npm run build && electron-builder --win nsis --x64 --publish never"
   },
   "dependencies": {
     "bson": "^6.8.0",
+    "electron-updater": "^6.8.9",
     "ioredis": "^5.4.1",
     "mongodb": "^6.8.0",
     "mysql2": "^3.11.0",
     "pinyin-pro": "^3.28.1",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
   },
   "devDependencies": {
-    "@types/node": "^20.12.7",
-    "@types/react": "^18.3.3",
-    "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^4.3.1",
+    "@types/node": "^24.13.3",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
     "concurrently": "^8.2.2",
     "cross-env": "^7.0.3",
-    "electron": "^30.0.9",
-    "electron-builder": "^24.13.3",
-    "typescript": "^5.4.5",
-    "vite": "^5.2.11",
+    "electron": "^43.1.0",
+    "electron-builder": "^26.15.3",
+    "typescript": "^5.9.3",
+    "vite": "^8.1.4",
     "wait-on": "^7.2.0"
   },
   "build": {
@@ -48,14 +60,34 @@
     "directories": {
       "output": "release"
     },
+    "electronUpdaterCompatibility": ">=2.16",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "maoyugame",
+        "repo": "TTool",
+        "private": true,
+        "releaseType": "release",
+        "channel": "latest"
+      }
+    ],
     "mac": {
       "category": "public.app-category.utilities"
     },
     "win": {
-      "target": "nsis",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "icon": "assets/icon/app.ico"
     },
     "nsis": {
+      "artifactName": "${productName}-${version}-windows-${arch}-setup.${ext}",
+      "differentialPackage": true,
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,

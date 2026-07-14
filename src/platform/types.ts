@@ -37,6 +37,52 @@ export interface InstallResult {
   error?: string
 }
 
+export type UpdateStatus =
+  | 'idle'
+  | 'disabled'
+  | 'unsupported'
+  | 'checking'
+  | 'up-to-date'
+  | 'available'
+  | 'downloading'
+  | 'downloaded'
+  | 'installing'
+  | 'error'
+
+export interface UpdateProgress {
+  percent: number
+  transferred: number
+  total: number
+  bytesPerSecond: number
+}
+
+export interface UpdateState {
+  status: UpdateStatus
+  supported: boolean
+  enabled: boolean
+  currentVersion: string
+  availableVersion: string | null
+  releaseName: string | null
+  releaseNotes: string | null
+  releaseDate: string | null
+  progress: UpdateProgress | null
+  checkedAt: string | null
+  error: string | null
+}
+
+export interface UpdateCommandResult {
+  ok: boolean
+  error?: string
+}
+
+export interface UpdateApi {
+  getState(): Promise<UpdateState>
+  check(): Promise<UpdateCommandResult>
+  download(): Promise<UpdateCommandResult>
+  install(): Promise<UpdateCommandResult>
+  onState(cb: (state: UpdateState) => void): () => void
+}
+
 export interface Rect {
   x: number
   y: number
@@ -355,6 +401,9 @@ export interface Platform {
 
   /** 插件管理（仅桌面；web 下为 undefined）。 */
   plugins?: PluginApi
+
+  /** 宿主应用自动更新（仅受支持的桌面安装版；不属于插件 SDK 表面）。 */
+  updates?: UpdateApi
 
   /** 通用 TCP/TLS 字节管道（仅桌面；web 下为 undefined）。 */
   net?: NetApi

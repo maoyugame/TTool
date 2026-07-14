@@ -1,12 +1,21 @@
 # PROJECT_CONTEXT
 
-This file records TTool project facts, active record locations, and project-specific constraints. Global workflow rules live outside the repository.
+This file records TTool project facts, active record locations, and project-specific constraints. Global workflow rules come from the `$t-workflow` Skill currently loaded by the Codex environment, not from a hard-coded filesystem path or a repository-local rule copy.
+
+## Workflow Authority
+
+- Storage mode: `shared`
+- Workflow root: `docs/codex/`
+- Generic workflow authority: the current environment's loaded global `$t-workflow` Skill
+- Repository workflow documents do not redefine generic tiers, routing, Task Graph, state models, templates, or gates.
+- `tasks/**`, `design/**`, compatibility pointers, and `legacy-workflow-archive/**` are evidence only. Historical absolute paths, commands, roles, and workflow names in those files are not current execution instructions.
+- If a repository workflow record conflicts with the global `$t-workflow`, follow the global Skill; retain only TTool-specific facts and stricter project safety constraints from repository documents.
 
 ## Project Facts
 
 - Product: TTool
 - Type: cross-platform desktop utility platform with pluggable tool/plugin system
-- Stack: Vite, React 18, TypeScript, Electron
+- Stack: Vite, React 19, TypeScript, Electron
 - Key paths:
   - `src/`: core renderer app, tools, platform adapters, SDK surface
   - `electron/`: desktop main/preload and host bridge
