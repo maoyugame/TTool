@@ -83,6 +83,60 @@ export interface UpdateApi {
   onState(cb: (state: UpdateState) => void): () => void
 }
 
+export type CodexUsageConnection = 'idle' | 'connecting' | 'ready' | 'error'
+
+export interface CodexUsageWindow {
+  usedPercent: number
+  windowDurationMins: number | null
+  resetsAt: number | null
+}
+
+export interface CodexUsageLimit {
+  limitId: string | null
+  limitName: string | null
+  primary: CodexUsageWindow | null
+  secondary: CodexUsageWindow | null
+  planType: string | null
+  rateLimitReachedType: string | null
+}
+
+export interface CodexUsageRateLimits {
+  rateLimits: CodexUsageLimit | null
+  rateLimitsByLimitId: Record<string, CodexUsageLimit | undefined> | null
+}
+
+export interface CodexTokenUsage {
+  summary: {
+    lifetimeTokens?: number | string | null
+    peakDailyTokens?: number | string | null
+    longestRunningTurnSec?: number | string | null
+    currentStreakDays?: number | string | null
+    longestStreakDays?: number | string | null
+  } | null
+  dailyUsageBuckets: Array<{ startDate: string; tokens: number | string }> | null
+}
+
+export interface CodexUsageState {
+  connection: CodexUsageConnection
+  error: string | null
+  updatedAt: number | null
+  rateLimits: CodexUsageRateLimits | null
+  usage: CodexTokenUsage | null
+  enabled: boolean
+  widgetVisible: boolean
+}
+
+/** 内置 Codex 用量工具的 first-party 平台能力；不属于外部插件 SDK 表面。 */
+export interface CodexUsageApi {
+  getState(): Promise<CodexUsageState>
+  refresh(): Promise<CodexUsageState>
+  setEnabled(enabled: boolean): Promise<CodexUsageState>
+  showWidget(): Promise<CodexUsageState>
+  hideWidget(): Promise<CodexUsageState>
+  release(): Promise<CodexUsageState>
+  onState(cb: (state: CodexUsageState) => void): () => void
+}
+
 export interface Rect {
   x: number
   y: number

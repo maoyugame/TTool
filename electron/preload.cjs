@@ -13,6 +13,20 @@ contextBridge.exposeInMainWorld('ttool', {
   windowToggleMaximize: () => ipcRenderer.invoke('win:toggleMaximize'),
   windowClose: () => ipcRenderer.invoke('win:close'),
   translate: (text, from, to) => ipcRenderer.invoke('translate', { text, from, to }),
+  // Codex 用量状态：first-party 内置工具专用，不进入插件 SDK。
+  codexUsage: {
+    getState: () => ipcRenderer.invoke('codex-usage:getState'),
+    refresh: () => ipcRenderer.invoke('codex-usage:refresh'),
+    setEnabled: (enabled) => ipcRenderer.invoke('codex-usage:setEnabled', { enabled }),
+    showWidget: () => ipcRenderer.invoke('codex-usage:showWidget'),
+    hideWidget: () => ipcRenderer.invoke('codex-usage:hideWidget'),
+    release: () => ipcRenderer.invoke('codex-usage:release'),
+    onState: (cb) => {
+      const h = (_e, state) => cb(state)
+      ipcRenderer.on('codex-usage:state', h)
+      return () => ipcRenderer.removeListener('codex-usage:state', h)
+    },
+  },
   // 当前窗口模式：主窗 or 快速启动器小窗（按 URL hash 区分）
   mode: location.hash === '#launcher' ? 'launcher' : 'main',
   // 事件订阅：返回取消订阅函数

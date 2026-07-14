@@ -167,3 +167,14 @@ const modules = import.meta.glob(['./*.tsx', './*/index.tsx'], { eager: true })
 - `AnnotationEditor` 进入时默认使用 `适配` 视图；用户手动缩放/平移后进入 manual 状态，`适配` / `100%` / `-` / `+` / Ctrl/Meta wheel 只改变视图，不改变导出坐标。
 - 标注类型包含箭头、矩形、圆形、画笔、文本和涂抹式马赛克。`选择` 模式支持点选或框选标注，选中对象可拖动或按 Del/Backspace 删除；文本输入聚焦时 Delete/Backspace/Esc 不删除图层。
 - 矩形和圆形支持 `携带文本`。勾选后绘制形状会追加文本输入并自动聚焦；Enter/blur 提交，Esc 或空文本只取消文本，不删除形状；形状和提交文本作为同一 undo 分组。
+
+---
+
+## 8. 内置工具：Codex 用量状态
+
+`codex-usage` 是桌面端 first-party 工具，通过本机已安装、已登录的 `codex app-server` 读取 `account/rateLimits/read` 与 `account/usage/read` 快照；不会读取、保存或显示 Codex 登录凭据，也不属于外部插件 SDK 能力。
+
+- 首次打开工具页时才按需启动 App Server；若没有启用常驻且用户离开工具页，会停止子进程。
+- 启用“常驻”后，透明状态窗固定在主显示器右下角，默认置顶、鼠标穿透、不显示在任务栏；关闭常驻立即销毁窗口并停止子进程。
+- 单独点击“显示”可临时打开状态窗；隐藏后如果未启用常驻，同样会释放后台资源。
+- 本机未安装 Codex CLI、尚未登录或接口暂不可用时，工具只显示可恢复的错误状态，不会要求输入或暴露任何凭据。

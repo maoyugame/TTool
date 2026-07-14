@@ -15,6 +15,7 @@ interface TToolBridge {
   onSummon: (cb: () => void) => () => void
   onWindowFocus: (cb: () => void) => () => void
   onOpenTool: (cb: (id: string) => void) => () => void
+  codexUsage: import('./platform/types').CodexUsageApi
   updates: {
     getState: () => Promise<import('./platform/types').UpdateState>
     check: () => Promise<import('./platform/types').UpdateCommandResult>
