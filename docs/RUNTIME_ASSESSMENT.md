@@ -55,7 +55,7 @@ PoC 应独立于正式发布链，不与功能版本升级同批合并。
 | P0（扩大分发前） | `0.2.0` 按内部使用决策允许未签名发布，Windows 会显示“未知发布者” | 扩大到非受控机器前配置 `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD`，恢复签名强制门禁，并以签名后的 Actions 产物作为唯一正式资产 |
 | P1（内部机器增多时） | 私有 GitHub Provider 需要每台机器持有只读 token | 当前少量内部分发使用 `TTOOL_UPDATE_GH_TOKEN` 可接受；规模扩大后改用具备设备身份和短期凭证的受控更新服务，不把高权限 token 放入客户端 |
 | P1（插件生态扩大前） | 外部插件仍与宿主页面共享渲染上下文，技术上可看到 `window.ttool` 的 first-party bridge | 当前更新安装必须经过主进程原生确认且来源固定；后续应把第三方插件迁到独立 WebContents/受限 preload，而不只是依赖 SDK 白名单约定 |
-| P2 | React 19 最终构建的 Vite 主 chunk 为 590.20 kB（gzip 236.59 kB），超过默认 500 kB 提示线 | Electron 内部应用暂不为消除警告而重构；先测冷启动，再按工具边界使用 dynamic import 拆分 |
+| P2 | React 19 最终构建的 Vite 主 chunk 为 590.43 kB（gzip 236.68 kB），超过默认 500 kB 提示线 | Electron 内部应用暂不为消除警告而重构；先测冷启动，再按工具边界使用 dynamic import 拆分 |
 | P2 | Windows NSIS 安装包约 99.1 MiB | 属于 Electron 内置 Chromium 的预期成本；只有包体/内存成为已测量的产品指标时才触发 Tauri PoC |
 
 这些剩余项不阻塞少量受控内部机器使用；签名和真实 `0.2.0 → 0.2.1` 验收仍是扩大分发范围前的发布门禁。
