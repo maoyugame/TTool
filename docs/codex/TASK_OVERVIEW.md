@@ -34,3 +34,4 @@
 | 清理旧 workflow 规则副本 | workflow | completed | 活跃组织文档收敛为项目事实、约束、任务记录、inbox 和指标；旧规则/模板/员工副本非破坏归档 | unknown | unknown | unknown | 2026-07-08 |
 | TTool 项目组织文档初始化与旧项目迁移 | workflow | completed | Registry index upgraded; project context, metrics, overview, task inbox, batch folder, and task projections added | unknown | unknown | unknown | 2026-07-07 |
 | 初始化 PM + Employee 项目文档体系 | workflow | completed | Legacy PM/Employee organization documents preserved | unknown | unknown | unknown | 2026-07-07 |
+| TTool Codex 用量状态桌面悬浮工具 | tools / desktop | completed | 按需 App Server 用量服务、透明置顶鼠标穿透窗口和内置工具页已提交 | unknown | unknown | unknown | 2026-07-15 |

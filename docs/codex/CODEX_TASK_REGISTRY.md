@@ -24,6 +24,7 @@
 | 2026-07-03-screenshot-pin-v1-acceptance-interaction | TTool 截图贴图 v1 验收交互优化 | screenshot-pin | commit_gate_pending | 2026-07-03-screenshot-pin-v1-acceptance-interaction-root | [Task State Projection](tasks/2026-07-03-screenshot-pin-v1-acceptance-interaction.md#task-state-projection) | 2026-07-07 |
 | 2026-07-03-screenshot-pin-v1 | TTool 截图贴图内置工具 v1 | screenshot-pin | commit_gate_pending | 2026-07-03-screenshot-pin-v1-root | [Task State Projection](tasks/2026-07-03-screenshot-pin-v1.md#task-state-projection) | 2026-07-07 |
 | 2026-07-02-init-pm-employee-docs | 初始化 PM + Employee 项目文档体系 | workflow | completed | 2026-07-02-init-pm-employee-docs-root | [Task State Projection](tasks/2026-07-02-init-pm-employee-docs.md#task-state-projection) | 2026-07-07 |
+| 2026-07-15-codex-usage-desktop-widget | TTool Codex 用量状态桌面悬浮工具 | tools / desktop | completed | 2026-07-15-codex-usage-desktop-widget-root | [Task State Projection](tasks/2026-07-15-codex-usage-desktop-widget.md#task-state-projection) | 2026-07-15 |
 
 ## Notes
 
