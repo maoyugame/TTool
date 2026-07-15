@@ -10,6 +10,7 @@ const path = require('node:path')
 // 再由 src/store/fileRank.ts 按相关性重排、截断展示。
 const MAX = 150
 const TIMEOUT = 5000
+const DRIVE_CACHE_TTL = 5000
 
 // Windows Search：PS 脚本读 $env:TTOOL_Q，自行转义 LIKE 项，输出每行一个路径（UTF-8）。
 const PS_SCRIPT = `
@@ -88,31 +89,50 @@ function runText(cmd, args) {
       return
     }
     let out = ''
-    const timer = setTimeout(() => { try { child.kill() } catch { /* ignore */ } resolve(out) }, TIMEOUT)
+    let done = false
+    const finish = () => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      try { child.kill() } catch { /* ignore */ }
+      resolve(out)
+    }
+    const timer = setTimeout(finish, TIMEOUT)
     child.stdout.setEncoding('utf8')
     child.stdout.on('data', (d) => (out += d))
-    child.on('error', () => { clearTimeout(timer); resolve('') })
-    child.on('close', () => { clearTimeout(timer); resolve(out) })
+    child.on('error', finish)
+    child.on('close', finish)
   })
 }
 
-// 枚举「固定硬盘」盘符（DriveType=Fixed），排除 C:（C 盘由 Windows 索引覆盖）。缓存一次。
-let deepDrivesCache = null
+function parseDriveRoots(out) {
+  const seen = new Set()
+  const drives = []
+  for (const line of String(out || '').split(/\r?\n/)) {
+    const drive = line.trim().toUpperCase()
+    if (!/^[A-Z]:\\$/.test(drive) || seen.has(drive)) continue
+    seen.add(drive)
+    drives.push(drive)
+  }
+  return drives
+}
+
+// 枚举所有已就绪盘符（固定盘、移动盘、映射盘等），短时缓存以避免输入时频繁启动 PowerShell。
+// C 盘也参与补充扫描：Windows Search 只覆盖已建立索引的位置，不能代表整个 C 盘。
+let deepDrivesCache = { expiresAt: 0, drives: [] }
 async function getDeepDrives() {
-  if (deepDrivesCache) return deepDrivesCache
+  const now = Date.now()
+  if (now < deepDrivesCache.expiresAt) return deepDrivesCache.drives
   try {
     const out = await runText('powershell.exe', [
       '-NoProfile', '-NonInteractive', '-Command',
-      "[System.IO.DriveInfo]::GetDrives() | Where-Object { $_.DriveType -eq 'Fixed' -and $_.IsReady } | ForEach-Object { $_.Name }",
+      '[System.IO.DriveInfo]::GetDrives() | Where-Object { $_.IsReady } | ForEach-Object { $_.Name }',
     ])
-    deepDrivesCache = out
-      .split(/\r?\n/)
-      .map((s) => s.trim())
-      .filter((d) => /^[A-Za-z]:\\$/.test(d) && d[0].toUpperCase() !== 'C')
+    deepDrivesCache = { expiresAt: now + DRIVE_CACHE_TTL, drives: parseDriveRoots(out) }
   } catch {
-    deepDrivesCache = []
+    deepDrivesCache = { expiresAt: now + DRIVE_CACHE_TTL, drives: [] }
   }
-  return deepDrivesCache
+  return deepDrivesCache.drives
 }
 
 // 深度扫描查询字符串清洗：仅留字母/数字/CJK/空格/._-，杜绝注入与 -Filter 通配符干扰。
@@ -128,7 +148,7 @@ if([string]::IsNullOrWhiteSpace($q) -or [string]::IsNullOrWhiteSpace($d)){ exit 
 Get-ChildItem -LiteralPath $d -Recurse -ErrorAction SilentlyContinue -Filter ("*"+$q+"*") | Select-Object -First ${MAX} | ForEach-Object { [Console]::Out.WriteLine($_.FullName) }
 `
 
-// 深度扫描：Windows 上对「非 C 固定盘」递归搜索名字匹配的文件与文件夹（较慢，与索引并行）。
+// 深度扫描：Windows 上对所有已就绪盘符递归搜索名字匹配的文件与文件夹（较慢，与索引并行）。
 // mac/linux 的 mdfind/locate 已覆盖全盘，返回空。
 async function searchDeep(query) {
   if (process.platform !== 'win32') return []
@@ -168,4 +188,4 @@ async function searchFiles(query) {
   return r
 }
 
-module.exports = { searchFiles, searchDeep }
+module.exports = { searchFiles, searchDeep, _test: { parseDriveRoots } }

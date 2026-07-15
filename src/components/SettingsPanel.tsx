@@ -154,7 +154,7 @@ export function SettingsPanel() {
             <div style={{ ...rowStyle, marginBottom: 22 }}>
               <div>
                 <div style={{ fontSize: 13.5, color: 'var(--text)' }}>搜索本机文件</div>
-                <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>开启后，搜索框（含 Alt+Space 启动器）会同时搜索本机文件（系统索引）。默认仅搜工具。</div>
+                <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>开启后，搜索框（含 Alt+Space 启动器）会搜索所有已就绪盘符；索引结果优先，全盘结果稍后补充。默认仅搜工具。</div>
               </div>
               <Toggle on={fileSearch} onClick={() => { const v = !fileSearch; setFileSearch(v); setFileSearchOn(v) }} />
             </div>

@@ -1,7 +1,7 @@
 {
   "name": "ttool",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "TTool — 跨平台桌面多功能工具集 + 可插拔工具插件平台（指挥官风格启动台 + 标签工作区）",
   "author": "maoyugame",
   "repository": {
@@ -13,11 +13,14 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "check": "npm run typecheck && npm run test:updater && npm run test:plugins && npm run release:check && npm run smoke && npm run build",
+    "check": "npm run typecheck && npm run test:codex-usage && npm run test:filesearch && npm run test:screenshot && npm run test:updater && npm run test:plugins && npm run release:check && npm run smoke && npm run build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "smoke": "node scripts/ssr-smoke.mjs",
+    "test:codex-usage": "node scripts/codex-usage-test.cjs",
     "test:updater": "node scripts/updater-test.cjs",
+    "test:filesearch": "node scripts/filesearch-test.cjs && node scripts/filerank-test.cjs",
+    "test:screenshot": "node scripts/screenshot-freeze-test.cjs && node scripts/screenshot-pin-geometry-test.mjs",
     "build:sdk": "npm --prefix packages/sdk run build",
     "build:example-plugin": "npm run build:sdk && npm --prefix examples/hello-tool install --no-package-lock && npm --prefix examples/hello-tool run build",
     "test:plugins": "npm run build:example-plugin && node scripts/plugin-smoke.cjs",

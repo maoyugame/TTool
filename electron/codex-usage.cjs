@@ -1,5 +1,7 @@
 // Codex App Server 用量客户端：仅运行在 Electron 主进程。
 // 不读取、不透传任何认证令牌；App Server 自行使用用户已登录的本机 Codex 会话。
+const fs = require('node:fs')
+const path = require('node:path')
 const { spawn } = require('node:child_process')
 
 const DEFAULT_POLL_INTERVAL_MS = 60_000
@@ -10,6 +12,7 @@ function emptyState() {
     connection: 'idle',
     error: null,
     updatedAt: null,
+    lastSuccessfulRefreshAt: null,
     rateLimits: null,
     usage: null,
   }
@@ -38,12 +41,54 @@ function mergeRateLimitSnapshot(previous, next) {
   }
 }
 
-function codexCommand() {
-  // Windows 下优先 .exe，避免 Node 直接启动 .cmd shim 的 EINVAL 限制。
-  return process.platform === 'win32' ? 'codex.exe' : 'codex'
+function findCommandOnWindowsPath(name, { env = process.env, existsSync = fs.existsSync } = {}) {
+  const pathValue = env.Path || env.PATH || ''
+  for (const entry of pathValue.split(';')) {
+    const directory = entry.trim().replace(/^"|"$/g, '')
+    if (!directory) continue
+    const candidate = path.join(directory, name)
+    try {
+      if (existsSync(candidate)) return candidate
+    } catch {
+      // A bad PATH entry must not block the remaining command lookup.
+    }
+  }
+  return null
 }
 
-function createCodexUsageService({ spawnImpl = spawn, onState = () => {}, pollIntervalMs = DEFAULT_POLL_INTERVAL_MS, requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS } = {}) {
+function resolveCodexLaunchAttempts({ platform = process.platform, env = process.env, existsSync = fs.existsSync } = {}) {
+  if (platform !== 'win32') return [{ command: 'codex', args: ['app-server'], options: {} }]
+
+  const exePath = findCommandOnWindowsPath('codex.exe', { env, existsSync })
+  const cmdPath = findCommandOnWindowsPath('codex.cmd', { env, existsSync })
+  const pathKey = Object.prototype.hasOwnProperty.call(env, 'Path') ? 'Path' : 'PATH'
+  const commandEnv = cmdPath
+    ? { ...env, [pathKey]: path.dirname(cmdPath) + ';' + (env[pathKey] || env.PATH || env.Path || '') }
+    : env
+
+  return [
+    { command: exePath || 'codex.exe', args: ['app-server'], options: {} },
+    {
+      command: env.ComSpec || env.COMSPEC || 'cmd.exe',
+      args: ['/d', '/s', '/c', 'codex.cmd app-server'],
+      options: { env: commandEnv },
+    },
+  ]
+}
+
+function createCodexUsageService({
+  spawnImpl = spawn,
+  onState = () => {},
+  pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
+  requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+  platform = process.platform,
+  env = process.env,
+  existsSync = fs.existsSync,
+  clientVersion = '0.0.0',
+} = {}) {
+  const normalizedClientVersion = typeof clientVersion === 'string' && clientVersion.trim()
+    ? clientVersion.trim()
+    : '0.0.0'
   let child = null
   let childOutput = ''
   let initialized = false
@@ -51,7 +96,9 @@ function createCodexUsageService({ spawnImpl = spawn, onState = () => {}, pollIn
   let stoppedByOwner = false
   let sessionId = 0
   let pollTimer = null
+  let startNextAttempt = null
   const pendingRequests = new Map()
+  const readyWaiters = new Set()
   let current = emptyState()
 
   function publish() {
@@ -63,9 +110,32 @@ function createCodexUsageService({ spawnImpl = spawn, onState = () => {}, pollIn
     publish()
   }
 
-  function clearPendingRequests() {
-    for (const item of pendingRequests.values()) clearTimeout(item.timer)
+  function requestError(message) {
+    return new Error(message)
+  }
+
+  function clearPendingRequests(message = '本机 Codex 已停止') {
+    for (const item of pendingRequests.values()) {
+      clearTimeout(item.timer)
+      item.reject(requestError(message))
+    }
     pendingRequests.clear()
+  }
+
+  function resolveReadyWaiters() {
+    for (const waiter of readyWaiters) waiter.resolve()
+    readyWaiters.clear()
+  }
+
+  function rejectReadyWaiters(message) {
+    for (const waiter of readyWaiters) waiter.reject(requestError(message))
+    readyWaiters.clear()
+  }
+
+  function waitForInitialization() {
+    if (initialized) return Promise.resolve()
+    if (current.connection === 'error') return Promise.reject(requestError(current.error || '无法连接本机 Codex'))
+    return new Promise((resolve, reject) => readyWaiters.add({ resolve, reject }))
   }
 
   function clearPolling() {
@@ -81,6 +151,7 @@ function createCodexUsageService({ spawnImpl = spawn, onState = () => {}, pollIn
       updatedAt: Date.now(),
     }
     publish()
+    if (!initialized) rejectReadyWaiters(message)
   }
 
   function sendNotification(method, params) {
@@ -95,28 +166,44 @@ function createCodexUsageService({ spawnImpl = spawn, onState = () => {}, pollIn
   }
 
   function request(method, params = {}) {
-    if (!child || !child.stdin || child.stdin.destroyed) return null
+    if (!child || !child.stdin || child.stdin.destroyed) return Promise.reject(requestError('无法与本机 Codex 通信'))
     const id = nextRequestId++
-    const timer = setTimeout(() => {
-      if (!pendingRequests.has(id)) return
-      pendingRequests.delete(id)
-      markUnavailable('本机 Codex 响应超时')
-    }, requestTimeoutMs)
-    pendingRequests.set(id, { method, timer })
-    try {
-      child.stdin.write(JSON.stringify({ method, id, params }) + '\n')
-      return id
-    } catch {
-      clearTimeout(timer)
-      pendingRequests.delete(id)
-      markUnavailable('无法与本机 Codex 通信')
-      return null
-    }
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        const pending = pendingRequests.get(id)
+        if (!pending) return
+        pendingRequests.delete(id)
+        const error = requestError('本机 Codex 响应超时')
+        pending.reject(error)
+        if (method === 'initialize' && !initialized && startNextAttempt) {
+          const active = child
+          child = null
+          try {
+            active?.kill?.()
+          } catch {
+            /* ignore */
+          }
+          startNextAttempt()
+          return
+        }
+        markUnavailable(error.message)
+      }, requestTimeoutMs)
+      pendingRequests.set(id, { method, timer, resolve, reject })
+      try {
+        child.stdin.write(JSON.stringify({ method, id, params }) + '\n')
+      } catch {
+        clearTimeout(timer)
+        pendingRequests.delete(id)
+        const error = requestError('无法与本机 Codex 通信')
+        reject(error)
+        markUnavailable(error.message)
+      }
+    })
   }
 
   function beginPolling() {
     clearPolling()
-    pollTimer = setInterval(() => refresh(), pollIntervalMs)
+    pollTimer = setInterval(() => { void refresh() }, pollIntervalMs)
   }
 
   function handleRateLimitUpdate(patch) {
@@ -136,31 +223,49 @@ function createCodexUsageService({ spawnImpl = spawn, onState = () => {}, pollIn
     pendingRequests.delete(message.id)
 
     if (message.error) {
+      let error
       if (pending.method === 'account/rateLimits/read' || pending.method === 'account/usage/read') {
-        markUnavailable('无法读取 Codex 用量，请确认已在本机 Codex 登录')
+        error = requestError('无法读取 Codex 用量，请确认已在本机 Codex 登录')
       } else {
-        markUnavailable('本机 Codex 初始化失败')
+        error = requestError('本机 Codex 初始化失败')
       }
+      markUnavailable(error.message)
+      pending.reject(error)
       return
     }
 
     if (pending.method === 'initialize') {
       initialized = true
+      startNextAttempt = null
       sendNotification('initialized', {})
       update({ connection: 'ready', error: null })
-      request('account/rateLimits/read')
-      request('account/usage/read')
+      resolveReadyWaiters()
+      void request('account/rateLimits/read').catch(() => {})
+      void request('account/usage/read').catch(() => {})
       beginPolling()
+      pending.resolve(message.result)
       return
     }
 
     if (pending.method === 'account/rateLimits/read') {
-      update({ connection: 'ready', error: null, rateLimits: message.result || null })
+      update({
+        connection: 'ready',
+        error: null,
+        lastSuccessfulRefreshAt: Date.now(),
+        rateLimits: message.result || null,
+      })
+      pending.resolve(message.result)
       return
     }
 
     if (pending.method === 'account/usage/read') {
-      update({ connection: 'ready', error: null, usage: message.result || null })
+      update({
+        connection: 'ready',
+        error: null,
+        lastSuccessfulRefreshAt: Date.now(),
+        usage: message.result || null,
+      })
+      pending.resolve(message.result)
     }
   }
 
@@ -204,60 +309,87 @@ function createCodexUsageService({ spawnImpl = spawn, onState = () => {}, pollIn
     childOutput = ''
     const activeSessionId = ++sessionId
     update({ connection: 'connecting', error: null })
-    try {
-      child = spawnImpl(codexCommand(), ['app-server'], {
-        stdio: ['pipe', 'pipe', 'pipe'],
-        windowsHide: true,
-      })
-    } catch {
-      child = null
-      markUnavailable('未找到可用的本机 Codex CLI')
-      return state()
-    }
+    const attempts = resolveCodexLaunchAttempts({ platform, env, existsSync })
+    let attemptIndex = 0
 
-    if (!child) {
-      markUnavailable('未找到可用的本机 Codex CLI')
-      return state()
+    startNextAttempt = () => {
+      const attempt = attempts[attemptIndex++]
+      if (!attempt) {
+        startNextAttempt = null
+        if (!stoppedByOwner) markUnavailable('\u672a\u627e\u5230\u53ef\u7528\u7684\u672c\u673a Codex CLI')
+        return false
+      }
+
+      let launchedChild
+      try {
+        launchedChild = spawnImpl(attempt.command, attempt.args, {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          windowsHide: true,
+          ...attempt.options,
+        })
+      } catch {
+        return startNextAttempt()
+      }
+
+      if (!launchedChild) return startNextAttempt()
+      child = launchedChild
+      launchedChild.stdout?.setEncoding?.('utf8')
+      launchedChild.stdout?.on('data', consumeOutput)
+      launchedChild.on?.('error', () => {
+        if (child !== launchedChild || sessionId !== activeSessionId) return
+        child = null
+        clearPendingRequests()
+        clearPolling()
+        if (!stoppedByOwner && !initialized && startNextAttempt) {
+          startNextAttempt()
+          return
+        }
+        if (!stoppedByOwner) markUnavailable('\u65e0\u6cd5\u542f\u52a8\u672c\u673a Codex CLI')
+      })
+      launchedChild.on?.('exit', () => {
+        if (child !== launchedChild || sessionId !== activeSessionId) return
+        child = null
+        clearPendingRequests()
+        clearPolling()
+        if (!stoppedByOwner && !initialized && startNextAttempt) {
+          startNextAttempt()
+          return
+        }
+        if (!stoppedByOwner) markUnavailable('\u672c\u673a Codex \u5df2\u505c\u6b62')
+      })
+      void request('initialize', {
+        clientInfo: {
+          name: 'ttool',
+          title: 'TTool Codex Usage Widget',
+          version: normalizedClientVersion,
+        },
+      }).catch(() => {})
+      return true
     }
-    const launchedChild = child
-    child.stdout?.setEncoding?.('utf8')
-    child.stdout?.on('data', consumeOutput)
-    child.on?.('error', () => {
-      if (child !== launchedChild || sessionId !== activeSessionId) return
-      child = null
-      clearPendingRequests()
-      clearPolling()
-      if (!stoppedByOwner) markUnavailable('无法启动本机 Codex CLI')
-    })
-    child.on?.('exit', () => {
-      if (child !== launchedChild || sessionId !== activeSessionId) return
-      child = null
-      clearPendingRequests()
-      clearPolling()
-      if (!stoppedByOwner) markUnavailable('本机 Codex 已停止')
-    })
-    request('initialize', {
-      clientInfo: {
-        name: 'ttool',
-        title: 'TTool Codex Usage Widget',
-        version: '0.2.0',
-      },
-    })
+    startNextAttempt()
     return state()
   }
 
-  function refresh() {
-    if (!child) return start()
-    if (!initialized) return state()
-    request('account/rateLimits/read')
-    request('account/usage/read')
+  async function refresh() {
+    if (!child) start()
+    try {
+      if (!initialized) await waitForInitialization()
+      await Promise.all([
+        request('account/rateLimits/read'),
+        request('account/usage/read'),
+      ])
+    } catch (error) {
+      if (current.connection !== 'error') markUnavailable('无法刷新本机 Codex 用量')
+    }
     return state()
   }
 
   function stop() {
     stoppedByOwner = true
     sessionId += 1
-    clearPendingRequests()
+    startNextAttempt = null
+    clearPendingRequests('本机 Codex 已停止')
+    rejectReadyWaiters('本机 Codex 已停止')
     clearPolling()
     const active = child
     child = null
@@ -286,4 +418,4 @@ function createCodexUsageService({ spawnImpl = spawn, onState = () => {}, pollIn
   return { start, stop, refresh, state, handleMessage }
 }
 
-module.exports = { createCodexUsageService, mergeRateLimitSnapshot }
+module.exports = { createCodexUsageService, mergeRateLimitSnapshot, resolveCodexLaunchAttempts }

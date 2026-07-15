@@ -9,7 +9,9 @@ const { setupPlugins } = require('./plugins.cjs')
 const { setupHost } = require('./host/index.cjs')
 const { setupUpdater } = require('./updater.cjs')
 const { searchFiles, searchDeep } = require('./filesearch.cjs')
+const { captureFrozenDisplays, cropFrozenDisplayRegion } = require('./screenshot-freeze.cjs')
 const { createCodexUsageService } = require('./codex-usage.cjs')
+const { DEFAULT_CODEX_USAGE_CONFIG, normalizeWidgetOpacity, readCodexUsageConfigFile, writeCodexUsageConfigFile } = require('./codex-usage-config.cjs')
 
 // 固定应用名，确保 userData（插件目录）路径稳定一致（dev 下默认会变成 "Electron"）。
 app.setName('ttool')
@@ -26,9 +28,8 @@ let isQuitting = false
 const LAUNCHER_W = 720
 let launcherHeight = 72 // 渲染层按内容动态上报；初始仅搜索栏高度
 
-// 翻译（主进程 fetch，免 CORS）。与 src/platform/translateApi.ts 逻辑保持一致。
+// ---- Codex 用量状态内置工具 ----
 // 默认不启动任何子进程或悬浮窗；只有用户启用工具，或在工具页显式请求状态/显示悬浮窗时才按需创建。
-const DEFAULT_CODEX_USAGE_CONFIG = { enabled: false }
 let codexUsageConfig = { ...DEFAULT_CODEX_USAGE_CONFIG }
 let codexUsageService = null
 let codexUsageWidget = null
@@ -38,31 +39,22 @@ function codexUsageConfigFile() {
 }
 
 function readCodexUsageConfig() {
-  try {
-    const raw = JSON.parse(fs.readFileSync(codexUsageConfigFile(), 'utf8'))
-    return { enabled: Boolean(raw && raw.enabled) }
-  } catch {
-    return { ...DEFAULT_CODEX_USAGE_CONFIG }
-  }
+  return readCodexUsageConfigFile(codexUsageConfigFile())
 }
 
 function writeCodexUsageConfig(config) {
-  try {
-    fs.mkdirSync(path.dirname(codexUsageConfigFile()), { recursive: true })
-    fs.writeFileSync(codexUsageConfigFile(), JSON.stringify(config, null, 2), 'utf8')
-  } catch {
-    /* 配置保存失败不影响当前会话 */
-  }
+  writeCodexUsageConfigFile(codexUsageConfigFile(), config)
 }
 
 function codexUsageState() {
   const base = codexUsageService
     ? codexUsageService.state()
-    : { connection: 'idle', error: null, updatedAt: null, rateLimits: null, usage: null }
+    : { connection: 'idle', error: null, updatedAt: null, lastSuccessfulRefreshAt: null, rateLimits: null, usage: null }
   return {
     ...base,
     enabled: codexUsageConfig.enabled,
     widgetVisible: !!(codexUsageWidget && !codexUsageWidget.isDestroyed() && codexUsageWidget.isVisible()),
+    widgetOpacity: codexUsageConfig.widgetOpacity,
   }
 }
 
@@ -75,25 +67,40 @@ function broadcastCodexUsageState() {
 
 function getCodexUsageService() {
   if (!codexUsageService) {
-    codexUsageService = createCodexUsageService({ onState: broadcastCodexUsageState })
+    codexUsageService = createCodexUsageService({
+      onState: broadcastCodexUsageState,
+      clientVersion: codexUsageClientVersion(),
+    })
   }
   return codexUsageService
+}
+
+function codexUsageClientVersion() {
+  try {
+    const version = app.getVersion()
+    return typeof version === 'string' && version.trim() ? version.trim() : '0.0.0'
+  } catch {
+    return '0.0.0'
+  }
 }
 
 function codexUsageWidgetHtml() {
   return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8" />
 <style>
-:root { color-scheme: dark; --widget-surface: rgba(22, 25, 34, .82); --widget-border: rgba(255,255,255,.14); --widget-text: #f5f7fb; --widget-muted: rgba(245,247,251,.68); --widget-accent: #73b7ff; --widget-track: rgba(255,255,255,.13); }
+:root { color-scheme: dark; --widget-surface: rgba(22, 25, 34, .82); --widget-border: rgba(255,255,255,.14); --widget-text: #f5f7fb; --widget-muted: rgba(245,247,251,.68); --widget-accent: #73b7ff; --widget-track: rgba(255,255,255,.13); --widget-tick: rgba(245,247,251,.30); }
 * { box-sizing: border-box; }
 html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; user-select: none; }
 .card { height: 100%; border: 1px solid var(--widget-border); border-radius: 16px; padding: 13px 14px; color: var(--widget-text); background: var(--widget-surface); backdrop-filter: blur(18px); box-shadow: 0 12px 35px rgba(0,0,0,.28); }
-.top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.top { display: flex; align-items: center; justify-content: space-between; margin: -5px -5px 8px; padding: 5px; border-radius: 9px; -webkit-app-region: drag; cursor: grab; }
+.top:active { cursor: grabbing; }
+.top::after { content: '拖动此处'; margin-left: 6px; font-size: 9px; color: var(--widget-muted); }
 .title { font-size: 12px; font-weight: 700; letter-spacing: .04em; }
 .status { font-size: 10px; color: var(--widget-muted); }
 .line { display: grid; grid-template-columns: 43px 1fr 36px; align-items: center; gap: 8px; margin: 7px 0; font-size: 10px; color: var(--widget-muted); }
-.bar { height: 6px; overflow: hidden; border-radius: 99px; background: var(--widget-track); }
-.bar > i { display: block; height: 100%; border-radius: inherit; background: var(--widget-accent); transition: width .22s ease; }
+.bar { position: relative; height: 6px; overflow: hidden; border-radius: 99px; background: var(--widget-track); }
+.bar::before { content: ''; position: absolute; inset: 1px 0; z-index: 0; pointer-events: none; background: repeating-linear-gradient(90deg, transparent 0, transparent calc(20% - 1px), var(--widget-tick) calc(20% - 1px), var(--widget-tick) 20%); }
+.bar > i { position: relative; z-index: 1; display: block; height: 100%; border-radius: inherit; background: var(--widget-accent); transition: width .22s ease; }
 .percent { color: var(--widget-text); text-align: right; font-variant-numeric: tabular-nums; }
 .detail { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; margin-top: 7px; font-size: 10px; color: var(--widget-muted); }
 </style></head><body><div class="card">
@@ -113,29 +120,57 @@ function windowName(minutes, fallback) {
   if (minutes === 10080) return '周限额'
   return minutes ? Math.round(minutes) + ' 分钟' : fallback
 }
-function resetText(value) {
+function formatCountdown(seconds) {
+  const total = Math.max(0, Math.ceil(seconds))
+  if (total < 60) return total + ' 秒'
+  const minutes = Math.floor(total / 60)
+  if (minutes < 60) return minutes + ' 分'
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return hours + ' 时 ' + (minutes % 60) + ' 分'
+  return Math.floor(hours / 24) + ' 天 ' + (hours % 24) + ' 时'
+}
+function resetCountdown(value, now) {
   const n = Number(value)
-  if (!Number.isFinite(n) || n <= 0) return ''
-  const date = new Date(n < 1000000000000 ? n * 1000 : n)
-  return ' · 重置 ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  if (!Number.isFinite(n) || n <= 0) return '重置未知'
+  const resetsAt = n < 1000000000000 ? n * 1000 : n
+  if (resetsAt <= now) return '待重置'
+  return '重置 ' + formatCountdown((resetsAt - now) / 1000)
+}
+function freshnessText(state, now) {
+  const status = state && state.connection
+  const refreshedAt = Number(state && state.lastSuccessfulRefreshAt)
+  const hasRefresh = Number.isFinite(refreshedAt) && refreshedAt > 0
+  if (status === 'error') return '刷新失败'
+  if (!hasRefresh) return status === 'ready' ? '等待数据' : '连接中'
+  if (now - refreshedAt > 120000) return '数据过期'
+  return formatCountdown((now - refreshedAt) / 1000) + '前更新'
 }
 function renderWindow(prefix, data, fallback) {
-  const percent = Math.max(0, Math.min(100, Number(data && data.usedPercent) || 0))
+  const rawPercent = Number(data && data.usedPercent)
+  const percent = Number.isFinite(rawPercent) ? Math.max(0, Math.min(100, rawPercent)) : 0
   byId(prefix + '-label').textContent = windowName(data && data.windowDurationMins, fallback)
   byId(prefix + '-bar').style.width = percent + '%'
-  byId(prefix + '-value').textContent = data ? Math.round(percent) + '%' : '—'
+  byId(prefix + '-value').textContent = data && Number.isFinite(rawPercent) ? '余 ' + Math.round(100 - percent) + '%' : '—'
 }
+let latestState = null
 function render(state) {
+  latestState = state
   const limit = selectedLimit(state)
   byId('title').textContent = limit && limit.limitName ? limit.limitName + ' 用量' : 'Codex 用量'
   renderWindow('primary', limit && limit.primary, '主窗口')
   renderWindow('secondary', limit && limit.secondary, '次级')
   const status = state && state.connection
   byId('status').textContent = status === 'ready' ? '实时' : status === 'error' ? '不可用' : status === 'idle' ? '已暂停' : '连接中'
-  byId('detail').textContent = status === 'error' ? (state.error || '无法读取本机 Codex 状态') : limit && limit.primary ? '已用 ' + Math.round(limit.primary.usedPercent || 0) + '%' + resetText(limit.primary.resetsAt) : '正在读取本机 Codex 状态'
+  const now = Date.now()
+  const primaryPercent = Number(limit && limit.primary && limit.primary.usedPercent)
+  const remaining = Number.isFinite(primaryPercent) ? '余 ' + Math.round(100 - Math.max(0, Math.min(100, primaryPercent))) + '%' : ''
+  const countdown = limit && limit.primary ? resetCountdown(limit.primary.resetsAt, now) : ''
+  const freshness = freshnessText(state, now)
+  byId('detail').textContent = remaining ? freshness + ' · ' + remaining + ' · ' + countdown : freshness
 }
 window.ttool.codexUsage.onState(render)
 window.ttool.codexUsage.getState().then(render)
+window.setInterval(function () { if (latestState) render(latestState) }, 1000)
 </script></body></html>`
 }
 
@@ -143,6 +178,11 @@ function showCodexUsageWidget() {
   const service = getCodexUsageService()
   service.start()
   if (codexUsageWidget && !codexUsageWidget.isDestroyed()) {
+    try {
+      codexUsageWidget.setOpacity(codexUsageConfig.widgetOpacity)
+    } catch {
+      /* 在不支持透明度的窗口管理器中保持默认显示。 */
+    }
     codexUsageWidget.showInactive()
     broadcastCodexUsageState()
     return codexUsageState()
@@ -161,11 +201,12 @@ function showCodexUsageWidget() {
     backgroundColor: '#00000000',
     hasShadow: false,
     resizable: false,
-    movable: false,
-    focusable: false,
+    movable: true,
+    focusable: true,
     skipTaskbar: true,
     show: false,
     alwaysOnTop: true,
+    opacity: codexUsageConfig.widgetOpacity,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -177,9 +218,8 @@ function showCodexUsageWidget() {
   try {
     codexUsageWidget.setAlwaysOnTop(true, 'screen-saver')
     codexUsageWidget.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-    codexUsageWidget.setIgnoreMouseEvents(true, { forward: true })
   } catch {
-    /* 平台不支持的窗口属性保持安全降级 */
+    /* 平台不支持的窗口属性保持普通可交互窗口行为。 */
   }
   codexUsageWidget.once('ready-to-show', () => {
     if (codexUsageWidget && !codexUsageWidget.isDestroyed()) {
@@ -202,13 +242,27 @@ function destroyCodexUsageWidget() {
 }
 
 function setCodexUsageEnabled(enabled) {
-  codexUsageConfig = { enabled: Boolean(enabled) }
+  codexUsageConfig = { ...codexUsageConfig, enabled: Boolean(enabled) }
   writeCodexUsageConfig(codexUsageConfig)
   if (codexUsageConfig.enabled) {
     showCodexUsageWidget()
   } else {
     destroyCodexUsageWidget()
     if (codexUsageService) codexUsageService.stop()
+  }
+  broadcastCodexUsageState()
+  return codexUsageState()
+}
+
+function setCodexUsageWidgetOpacity(opacity) {
+  codexUsageConfig = { ...codexUsageConfig, widgetOpacity: normalizeWidgetOpacity(opacity) }
+  writeCodexUsageConfig(codexUsageConfig)
+  if (codexUsageWidget && !codexUsageWidget.isDestroyed()) {
+    try {
+      codexUsageWidget.setOpacity(codexUsageConfig.widgetOpacity)
+    } catch {
+      /* 在不支持透明度的窗口管理器中保持默认显示。 */
+    }
   }
   broadcastCodexUsageState()
   return codexUsageState()
@@ -283,10 +337,6 @@ const RECENT_SCREENSHOT_LIMIT = 5
 
 function screenshotConfigFile() {
   return path.join(app.getPath('userData'), 'screenshot-pin-config.json')
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 function clamp(n, min, max) {
@@ -549,14 +599,16 @@ function closeActiveOverlayWindows() {
   activeCapture.windows = []
 }
 
-function overlayHtml(captureId, d, action) {
+function overlayHtml(captureId, d, action, frozenImageDataUrl) {
   const meta = JSON.stringify({ captureId, displayId: d.id, defaultAction: action === 'pin' ? 'pin' : 'edit' })
+  const frozenImage = JSON.stringify(frozenImageDataUrl)
   return `<!doctype html>
 <html>
 <head>
 <meta charset="utf-8" />
 <style>
-html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; cursor: none; user-select: none; font-family: system-ui,-apple-system,Segoe UI,sans-serif; }
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #000; cursor: none; user-select: none; font-family: system-ui,-apple-system,Segoe UI,sans-serif; }
+#frozenFrame { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: fill; pointer-events: none; }
 #dim { position: fixed; inset: 0; background: rgba(0,0,0,.48); pointer-events: none; }
 body.has-selection #dim { background: transparent; }
 #cursorReticle { position: fixed; left: 0; top: 0; width: 16px; height: 16px; margin: -8px 0 0 -8px; pointer-events: none; z-index: 2147483647; transform: translate3d(-9999px,-9999px,0); opacity: .94; transition: opacity 70ms ease; }
@@ -589,6 +641,7 @@ button:disabled { opacity: .42; cursor: not-allowed; }
 </style>
 </head>
 <body>
+<img id="frozenFrame" src=${frozenImage} alt="" draggable="false" />
 <div id="dim"></div>
 <div id="cursorReticle" class="hidden" aria-hidden="true"></div>
 <div id="hint">拖拽选择区域，选区后拖动边框调整大小，Esc 取消</div>
@@ -1346,7 +1399,7 @@ function handleOverlayBridgeNavigation(event, rawUrl) {
   return true
 }
 
-function createOverlayWindow(captureId, display, action) {
+function createOverlayWindow(captureId, display, action, frozenFrame) {
   const overlay = new BrowserWindow({
     x: display.bounds.x,
     y: display.bounds.y,
@@ -1364,6 +1417,7 @@ function createOverlayWindow(captureId, display, action) {
     alwaysOnTop: true,
     focusable: true,
     hasShadow: false,
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -1381,10 +1435,8 @@ function createOverlayWindow(captureId, display, action) {
     return handleOverlayBridgeNavigation(null, url) ? { action: 'deny' } : { action: 'deny' }
   })
   overlay.setAlwaysOnTop(true, 'screen-saver')
-  overlay.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(overlayHtml(captureId, display, action)))
-  overlay.show()
-  overlay.focus()
-  return overlay
+  const ready = overlay.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(overlayHtml(captureId, display, action, frozenFrame.imageDataUrl)))
+  return { window: overlay, ready }
 }
 
 async function startScreenshotCapture(action, fromShortcut = false) {
@@ -1396,8 +1448,18 @@ async function startScreenshotCapture(action, fromShortcut = false) {
   try {
     const captureId = 'cap_' + Date.now().toString(36) + '_' + (++captureSeq).toString(36)
     const displays = screen.getAllDisplays().map(displayInfo)
-    activeCapture = { id: captureId, action, windows: [], displays }
-    activeCapture.windows = displays.map((d) => createOverlayWindow(captureId, d, action))
+    activeCapture = { id: captureId, action, windows: [], displays, frozenFrames: new Map() }
+    const frozenFrames = await captureFrozenDisplays(desktopCapturer, displays)
+    activeCapture.frozenFrames = frozenFrames
+    const overlays = displays.map((display) => createOverlayWindow(captureId, display, action, frozenFrames.get(String(display.id))))
+    activeCapture.windows = overlays.map((item) => item.window)
+    await Promise.all(overlays.map((item) => item.ready))
+    for (const overlay of activeCapture.windows) {
+      if (!overlay.isDestroyed()) overlay.show()
+    }
+    const primaryOverlay = displays.findIndex((display) => display.primary)
+    const focusedOverlay = activeCapture.windows[primaryOverlay >= 0 ? primaryOverlay : 0]
+    if (focusedOverlay && !focusedOverlay.isDestroyed()) focusedOverlay.focus()
     return { ok: true }
   } catch (e) {
     closeActiveOverlayWindows()
@@ -1406,29 +1468,6 @@ async function startScreenshotCapture(action, fromShortcut = false) {
     emitScreenshotStatus('error', msg)
     return { ok: false, error: msg }
   }
-}
-
-async function captureDisplayRegion(display, rect) {
-  const thumbWidth = Math.max(1, Math.round(display.bounds.width * (display.scaleFactor || 1)))
-  const thumbHeight = Math.max(1, Math.round(display.bounds.height * (display.scaleFactor || 1)))
-  const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: thumbWidth, height: thumbHeight } })
-  const source = sources.find((s) => String(s.display_id) === String(display.id)) || sources[0]
-  if (!source || source.thumbnail.isEmpty()) throw new Error('截图失败，请重试')
-  const img = source.thumbnail
-  const size = img.getSize()
-  const sx = size.width / display.bounds.width
-  const sy = size.height / display.bounds.height
-  const crop = {
-    x: clamp(Math.round(rect.x * sx), 0, Math.max(0, size.width - 1)),
-    y: clamp(Math.round(rect.y * sy), 0, Math.max(0, size.height - 1)),
-    width: clamp(Math.round(rect.width * sx), 1, size.width),
-    height: clamp(Math.round(rect.height * sy), 1, size.height),
-  }
-  crop.width = Math.min(crop.width, size.width - crop.x)
-  crop.height = Math.min(crop.height, size.height - crop.y)
-  const cropped = img.crop(crop)
-  const croppedSize = cropped.getSize()
-  return { imageDataUrl: cropped.toDataURL(), width: croppedSize.width, height: croppedSize.height }
 }
 
 function normalizeOverlayAnnotations(raw, rect) {
@@ -1908,7 +1947,8 @@ function normalizeOverlayAction(requested, defaultAction) {
 
 async function completeOverlaySelection(payload) {
   if (!activeCapture || payload.captureId !== activeCapture.id) return { ok: false, error: '截图已取消' }
-  const display = activeCapture.displays.find((d) => d.id === Number(payload.displayId))
+  const capture = activeCapture
+  const display = capture.displays.find((d) => d.id === Number(payload.displayId))
   if (!display) return { ok: false, error: '未检测到可用显示器' }
   const rect = {
     x: Math.round(Number(payload.rect && payload.rect.x) || 0),
@@ -1922,13 +1962,13 @@ async function completeOverlaySelection(payload) {
     emitScreenshotStatus('error', '选区过小')
     return { ok: false, error: '选区过小' }
   }
-  const action = normalizeOverlayAction(payload.action, activeCapture.action)
+  const action = normalizeOverlayAction(payload.action, capture.action)
   const annotations = normalizeOverlayAnnotations(payload.annotations, rect)
+  const frozenFrame = capture.frozenFrames.get(String(display.id))
   closeActiveOverlayWindows()
   activeCapture = null
   try {
-    await sleep(90)
-    let shot = await captureDisplayRegion(display, rect)
+    let shot = cropFrozenDisplayRegion(frozenFrame, display, rect)
     shot = await renderAnnotatedCapture(shot, annotations, rect)
     rememberScreenshot(shot.imageDataUrl, { displayId: display.id })
     if (action === 'pin') {
@@ -2374,14 +2414,14 @@ ipcMain.handle('translate', async (_e, { text, from, to }) => {
   return translateText(String(text ?? ''), from, to)
 })
 
-// ---- IPC：截图贴图 ----
 // ---- IPC：Codex 用量状态（仅 first-party 内置工具使用） ----
 ipcMain.handle('codex-usage:getState', () => openCodexUsageForToolPage())
-ipcMain.handle('codex-usage:refresh', () => {
-  getCodexUsageService().refresh()
+ipcMain.handle('codex-usage:refresh', async () => {
+  await getCodexUsageService().refresh()
   return codexUsageState()
 })
 ipcMain.handle('codex-usage:setEnabled', (_e, { enabled }) => setCodexUsageEnabled(enabled))
+ipcMain.handle('codex-usage:setWidgetOpacity', (_e, { opacity }) => setCodexUsageWidgetOpacity(opacity))
 ipcMain.handle('codex-usage:showWidget', () => showCodexUsageWidget())
 ipcMain.handle('codex-usage:hideWidget', () => {
   destroyCodexUsageWidget()
@@ -2537,7 +2577,7 @@ ipcMain.handle('files:search', async (_e, { query }) => {
     return []
   }
 })
-// 深度扫描其它固定硬盘（较慢，渲染层与索引结果并行调用、稍后合并）
+// 深度扫描所有已就绪盘符（较慢，渲染层与索引结果并行调用、稍后合并）
 ipcMain.handle('files:searchDeep', async (_e, { query }) => {
   try {
     return await searchDeep(query)

@@ -46,8 +46,8 @@ export function useFileSearch(query: string, enabled: boolean): { hits: FileHit[
     const my = ++seq.current
     setLoading(true)
     const arr = (r: unknown): FileHit[] => (Array.isArray(r) ? (r as FileHit[]) : [])
-    // 索引(快，覆盖 C 盘/已索引位置)与深度扫描(慢，其它固定盘)并行；各自返回即合并重排，
-    // 实现「C 盘即时出结果、其它盘稍后补入」。两者都受 seq 守卫，过期响应丢弃。
+    // 索引（快，覆盖已索引位置）与深度扫描（慢，覆盖所有已就绪盘符）并行；各自返回即合并重排。
+    // 两者都受 seq 守卫，过期响应丢弃。
     let base: FileHit[] = []
     let more: FileHit[] = []
     const apply = () => {

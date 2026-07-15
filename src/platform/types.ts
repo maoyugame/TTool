@@ -120,10 +120,13 @@ export interface CodexUsageState {
   connection: CodexUsageConnection
   error: string | null
   updatedAt: number | null
+  /** Time of the most recent successful local usage response; errors retain this value. */
+  lastSuccessfulRefreshAt: number | null
   rateLimits: CodexUsageRateLimits | null
   usage: CodexTokenUsage | null
   enabled: boolean
   widgetVisible: boolean
+  widgetOpacity: number
 }
 
 /** 内置 Codex 用量工具的 first-party 平台能力；不属于外部插件 SDK 表面。 */
@@ -131,6 +134,7 @@ export interface CodexUsageApi {
   getState(): Promise<CodexUsageState>
   refresh(): Promise<CodexUsageState>
   setEnabled(enabled: boolean): Promise<CodexUsageState>
+  setWidgetOpacity(opacity: number): Promise<CodexUsageState>
   showWidget(): Promise<CodexUsageState>
   hideWidget(): Promise<CodexUsageState>
   release(): Promise<CodexUsageState>
@@ -459,6 +463,9 @@ export interface Platform {
   /** 宿主应用自动更新（仅受支持的桌面安装版；不属于插件 SDK 表面）。 */
   updates?: UpdateApi
 
+  /** Codex 本机用量状态（仅 first-party 内置工具；web 下为 undefined）。 */
+  codexUsage?: CodexUsageApi
+
   /** 通用 TCP/TLS 字节管道（仅桌面；web 下为 undefined）。 */
   net?: NetApi
 
@@ -476,7 +483,7 @@ export interface Platform {
 
   /** 本机文件搜索（仅桌面，走 OS 系统索引，快）。web 下为 undefined。 */
   searchFiles?: (query: string) => Promise<FileHit[]>
-  /** 深度扫描其它固定硬盘（Windows 上扫非 C 盘，较慢；mac/linux 已被 searchFiles 覆盖返回空）。 */
+  /** 深度扫描所有已就绪盘符（Windows，较慢；mac/linux 已被 searchFiles 覆盖返回空）。 */
   searchFilesDeep?: (query: string) => Promise<FileHit[]>
   /** 用默认程序打开文件/文件夹（仅桌面）。 */
   openPath?: (path: string) => Promise<AppOpenResult>

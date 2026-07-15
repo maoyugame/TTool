@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('ttool', {
     getState: () => ipcRenderer.invoke('codex-usage:getState'),
     refresh: () => ipcRenderer.invoke('codex-usage:refresh'),
     setEnabled: (enabled) => ipcRenderer.invoke('codex-usage:setEnabled', { enabled }),
+    setWidgetOpacity: (opacity) => ipcRenderer.invoke('codex-usage:setWidgetOpacity', { opacity }),
     showWidget: () => ipcRenderer.invoke('codex-usage:showWidget'),
     hideWidget: () => ipcRenderer.invoke('codex-usage:hideWidget'),
     release: () => ipcRenderer.invoke('codex-usage:release'),
