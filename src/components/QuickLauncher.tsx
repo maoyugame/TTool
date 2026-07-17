@@ -10,9 +10,11 @@ import { isFileSearchOn, setFileSearchOn, useFileSearch, isExecutableFile } from
 import { ToolIcon } from './ToolIcon'
 import { MONO } from '../tools/ui'
 import type { HueName } from '../tools/hue'
+import { match as pinyinMatch } from 'pinyin-pro'
 
 const RECENTS_KEY = 'ttool.recents'
 const THEME_KEY = 'ttool.theme'
+const APPS_KEY = 'ttool.apps'
 
 function readRecents(): string[] {
   try {
@@ -24,8 +26,34 @@ function readRecents(): string[] {
   }
 }
 
+type ManualApp = { id: string; name: string; path: string }
+
+// 手动应用与主窗口共享同一个持久化列表；启动器是独立渲染器，不能直接使用主窗口 Context。
+function readManualApps(): ManualApp[] {
+  try {
+    const raw = localStorage.getItem(APPS_KEY)
+    const apps = raw ? JSON.parse(raw) : []
+    return Array.isArray(apps)
+      ? apps.filter((app): app is ManualApp => !!app && typeof app.id === 'string' && typeof app.name === 'string' && typeof app.path === 'string')
+      : []
+  } catch {
+    return []
+  }
+}
+
+function matchesManualApp(app: ManualApp, query: string): boolean {
+  const q = query.toLowerCase()
+  if ((app.name + app.path).toLowerCase().includes(q)) return true
+  try {
+    return !!pinyinMatch(app.name, q)
+  } catch {
+    return false
+  }
+}
+
 type Item =
   | { kind: 'tool'; id: string; name: string; desc: string; glyph: string; hue: HueName; icon?: string }
+  | { kind: 'app'; id: string; name: string; path: string }
   | { kind: 'file'; path: string; name: string }
 
 export function QuickLauncher() {
@@ -78,16 +106,22 @@ export function QuickLauncher() {
       .slice(0, 5)
   }, [q, pluginsReady, summonNonce])
 
+  const manualAppResults = useMemo(() => {
+    if (!q) return []
+    return readManualApps().filter((app) => matchesManualApp(app, q)).slice(0, 6)
+  }, [q, summonNonce])
+
   const { hits: fileHits, loading: filesLoading } = useFileSearch(query, fileOn)
 
-  // 组合候选项（工具在前，文件在后）
+  // 组合候选项（工具、手动应用在前，文件在后）
   const items: Item[] = useMemo(() => {
     const tools = (q ? toolResults : recentTools).map(
       (t): Item => ({ kind: 'tool', id: t.id, name: t.name, desc: t.desc, glyph: t.glyph, hue: t.hue, icon: t.icon })
     )
+    const apps: Item[] = manualAppResults.map((app) => ({ kind: 'app', id: app.id, name: app.name, path: app.path }))
     const files: Item[] = q && fileOn ? fileHits.slice(0, 8).map((f) => ({ kind: 'file' as const, path: f.path, name: f.name })) : []
-    return [...tools, ...files]
-  }, [q, toolResults, recentTools, fileHits, fileOn])
+    return [...tools, ...apps, ...files]
+  }, [q, toolResults, recentTools, manualAppResults, fileHits, fileOn])
 
   // 选中项越界时归零
   useEffect(() => {
@@ -96,6 +130,10 @@ export function QuickLauncher() {
 
   const activate = useCallback((it: Item) => {
     if (it.kind === 'tool') platform.launcher?.openTool(it.id)
+    else if (it.kind === 'app') {
+      void platform.openExternalApp(it.path)
+      platform.launcher?.hide()
+    }
     else {
       void platform.openPath?.(it.path)
       platform.launcher?.hide()
@@ -156,7 +194,7 @@ export function QuickLauncher() {
             onChange={(e) => { setQuery(e.target.value); setSel(0) }}
             onKeyDown={onKey}
             autoFocus
-            placeholder={fileOn ? '搜索工具与本机文件…' : '搜索工具…'}
+            placeholder={fileOn ? '搜索工具、应用与本机文件…' : '搜索工具与应用…'}
             style={{ flex: 1, border: 'none', background: 'transparent', fontSize: 17, color: 'var(--text)', minWidth: 0, outline: 'none' }}
           />
           {/* 文件搜索开关 chip */}
@@ -176,7 +214,7 @@ export function QuickLauncher() {
               <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.09em', textTransform: 'uppercase', color: 'var(--text3)', padding: '6px 8px 4px' }}>最近使用</div>
             )}
             {items.map((it, i) => (
-              <Row key={it.kind === 'tool' ? 't:' + it.id : 'f:' + it.path} item={it} active={i === sel} idx={i} onHover={() => setSel(i)} onClick={() => activate(it)} />
+              <Row key={it.kind === 'tool' ? 't:' + it.id : it.kind === 'app' ? 'a:' + it.id : 'f:' + it.path} item={it} active={i === sel} idx={i} onHover={() => setSel(i)} onClick={() => activate(it)} />
             ))}
           </div>
         )}
@@ -184,7 +222,7 @@ export function QuickLauncher() {
         {/* 空态 / 提示 */}
         {q && items.length === 0 && (
           <div style={{ padding: '20px 16px', color: 'var(--text3)', fontSize: 13, textAlign: 'center' }}>
-            {filesLoading ? '搜索中…' : fileOn ? `没有匹配「${q}」的工具或文件` : `没有匹配「${q}」的工具（开启「📁 文件」可搜本机文件）`}
+            {filesLoading ? '搜索中…' : fileOn ? `没有匹配「${q}」的工具、应用或文件` : `没有匹配「${q}」的工具或应用（开启「📁 文件」可搜本机文件）`}
           </div>
         )}
 
@@ -206,6 +244,8 @@ function Row({ item, active, idx, onHover, onClick }: { item: Item; active: bool
   return (
     <div
       data-idx={idx}
+      data-item-kind={item.kind}
+      data-item-name={item.name}
       onMouseEnter={onHover}
       onClick={onClick}
       style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 10px', borderRadius: 10, cursor: 'pointer', background: active ? 'var(--accentSoft)' : 'transparent' }}
@@ -213,7 +253,7 @@ function Row({ item, active, idx, onHover, onClick }: { item: Item; active: bool
       {item.kind === 'tool' ? (
         <ToolIcon icon={item.icon} glyph={item.glyph} hue={item.hue} size={32} radius={9} glyphSize={13} shadow="none" />
       ) : (
-        <span style={{ width: 32, height: 32, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--pill)', fontSize: 16, flexShrink: 0 }}>📄</span>
+        <span style={{ width: 32, height: 32, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--pill)', fontSize: 16, flexShrink: 0 }}>{item.kind === 'app' ? '🚀' : '📄'}</span>
       )}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 14, fontWeight: 540, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</div>
@@ -225,7 +265,7 @@ function Row({ item, active, idx, onHover, onClick }: { item: Item; active: bool
         const exec = item.kind === 'file' && isExecutableFile(item.name)
         return (
           <span style={{ fontSize: 10.5, fontWeight: 520, color: exec ? '#fff' : 'var(--text3)', background: exec ? '#d9803a' : 'var(--pill)', padding: '3px 8px', borderRadius: 6, flexShrink: 0 }}>
-            {item.kind === 'tool' ? '工具' : exec ? '可执行' : '文件'}
+            {item.kind === 'tool' ? '工具' : item.kind === 'app' ? '应用' : exec ? '可执行' : '文件'}
           </span>
         )
       })()}
