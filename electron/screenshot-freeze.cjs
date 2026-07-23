@@ -10,7 +10,6 @@ async function captureDisplayFrame(desktopCapturer, display) {
   if (!source || source.thumbnail.isEmpty()) throw new Error('截图失败，请重试')
   return {
     image: source.thumbnail,
-    imageDataUrl: source.thumbnail.toDataURL(),
   }
 }
 

@@ -191,6 +191,11 @@ contextBridge.exposeInMainWorld('ttool', {
     closeCaptureToast: (id) => ipcRenderer.invoke('screenshot:closeCaptureToast', { id }),
     overlaySelect: (payload) => ipcRenderer.invoke('screenshot:overlaySelect', payload),
     overlayCancel: (payload) => ipcRenderer.invoke('screenshot:overlayCancel', payload),
+    onOverlayFrame: (cb) => {
+      const h = (_e, frame) => cb(frame)
+      ipcRenderer.on('screenshot:overlay-frame', h)
+      return () => ipcRenderer.removeListener('screenshot:overlay-frame', h)
+    },
     onCapture: (cb) => {
       const h = (_e, capture) => cb(capture)
       ipcRenderer.on('screenshot:capture', h)

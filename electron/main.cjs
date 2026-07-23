@@ -10,6 +10,7 @@ const { setupHost } = require('./host/index.cjs')
 const { setupUpdater } = require('./updater.cjs')
 const { searchFiles, searchDeep } = require('./filesearch.cjs')
 const { captureFrozenDisplays, cropFrozenDisplayRegion } = require('./screenshot-freeze.cjs')
+const { loadOverlayWithFrame, overlayFrameReceiverScript } = require('./screenshot-overlay-frame.cjs')
 const { createCodexUsageService } = require('./codex-usage.cjs')
 const { DEFAULT_CODEX_USAGE_CONFIG, normalizeWidgetOpacity, readCodexUsageConfigFile, writeCodexUsageConfigFile } = require('./codex-usage-config.cjs')
 
@@ -599,9 +600,8 @@ function closeActiveOverlayWindows() {
   activeCapture.windows = []
 }
 
-function overlayHtml(captureId, d, action, frozenImageDataUrl) {
+function overlayHtml(captureId, d, action) {
   const meta = JSON.stringify({ captureId, displayId: d.id, defaultAction: action === 'pin' ? 'pin' : 'edit' })
-  const frozenImage = JSON.stringify(frozenImageDataUrl)
   return `<!doctype html>
 <html>
 <head>
@@ -641,7 +641,7 @@ button:disabled { opacity: .42; cursor: not-allowed; }
 </style>
 </head>
 <body>
-<img id="frozenFrame" src=${frozenImage} alt="" draggable="false" />
+<img id="frozenFrame" alt="" draggable="false" />
 <div id="dim"></div>
 <div id="cursorReticle" class="hidden" aria-hidden="true"></div>
 <div id="hint">拖拽选择区域，选区后拖动边框调整大小，Esc 取消</div>
@@ -669,6 +669,7 @@ button:disabled { opacity: .42; cursor: not-allowed; }
 </div>
 <script>
 const META = ${meta};
+${overlayFrameReceiverScript()}
 const MIN = 8;
 const EDGE_HIT = 8;
 const ANNO_MIN = 4;
@@ -1435,7 +1436,12 @@ function createOverlayWindow(captureId, display, action, frozenFrame) {
     return handleOverlayBridgeNavigation(null, url) ? { action: 'deny' } : { action: 'deny' }
   })
   overlay.setAlwaysOnTop(true, 'screen-saver')
-  const ready = overlay.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(overlayHtml(captureId, display, action, frozenFrame.imageDataUrl)))
+  const png = frozenFrame.image.toPNG()
+  const { ready } = loadOverlayWithFrame(overlay, overlayHtml(captureId, display, action), {
+    captureId,
+    displayId: display.id,
+    png,
+  })
   return { window: overlay, ready }
 }
 
