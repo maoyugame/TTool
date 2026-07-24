@@ -2,6 +2,64 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value))
 }
 
+function finiteNumber(value, fallback = 0) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function positiveDimension(value, fallback) {
+  const parsed = Number(value)
+  if (Number.isFinite(parsed) && parsed > 0) return parsed
+  const fallbackValue = Number(fallback)
+  return Number.isFinite(fallbackValue) && fallbackValue > 0 ? fallbackValue : 1
+}
+
+function normalizeOverlayViewport(display, viewport) {
+  const bounds = display && display.bounds ? display.bounds : {}
+  return {
+    width: positiveDimension(viewport && viewport.width, bounds.width),
+    height: positiveDimension(viewport && viewport.height, bounds.height),
+  }
+}
+
+function normalizeOverlayRect(rect, viewport) {
+  const width = positiveDimension(viewport && viewport.width, 1)
+  const height = positiveDimension(viewport && viewport.height, 1)
+  const x1 = finiteNumber(rect && rect.x)
+  const y1 = finiteNumber(rect && rect.y)
+  const x2 = x1 + finiteNumber(rect && rect.width)
+  const y2 = y1 + finiteNumber(rect && rect.height)
+  const left = clamp(Math.min(x1, x2), 0, width)
+  const top = clamp(Math.min(y1, y2), 0, height)
+  const right = clamp(Math.max(x1, x2), 0, width)
+  const bottom = clamp(Math.max(y1, y2), 0, height)
+  return { x: left, y: top, width: right - left, height: bottom - top }
+}
+
+function mapOverlayRectToSize(rect, viewport, targetSize) {
+  const sourceWidth = positiveDimension(viewport && viewport.width, 1)
+  const sourceHeight = positiveDimension(viewport && viewport.height, 1)
+  const targetWidth = Math.max(1, Math.round(positiveDimension(targetSize && targetSize.width, 1)))
+  const targetHeight = Math.max(1, Math.round(positiveDimension(targetSize && targetSize.height, 1)))
+  const normalized = normalizeOverlayRect(rect, { width: sourceWidth, height: sourceHeight })
+  const left = clamp(Math.round(normalized.x * targetWidth / sourceWidth), 0, targetWidth - 1)
+  const top = clamp(Math.round(normalized.y * targetHeight / sourceHeight), 0, targetHeight - 1)
+  const right = clamp(Math.round((normalized.x + normalized.width) * targetWidth / sourceWidth), left + 1, targetWidth)
+  const bottom = clamp(Math.round((normalized.y + normalized.height) * targetHeight / sourceHeight), top + 1, targetHeight)
+  return { x: left, y: top, width: right - left, height: bottom - top }
+}
+
+function resolveOverlaySelection(display, rect, viewport) {
+  const resolvedViewport = normalizeOverlayViewport(display, viewport)
+  const resolvedRect = normalizeOverlayRect(rect, resolvedViewport)
+  const bounds = display && display.bounds ? display.bounds : {}
+  const displayRect = mapOverlayRectToSize(resolvedRect, resolvedViewport, {
+    width: bounds.width,
+    height: bounds.height,
+  })
+  return { rect: resolvedRect, viewport: resolvedViewport, displayRect }
+}
+
 async function captureDisplayFrame(desktopCapturer, display) {
   const width = Math.max(1, Math.round(display.bounds.width * (display.scaleFactor || 1)))
   const height = Math.max(1, Math.round(display.bounds.height * (display.scaleFactor || 1)))
@@ -21,22 +79,19 @@ async function captureFrozenDisplays(desktopCapturer, displays) {
   return new Map(entries)
 }
 
-function cropFrozenDisplayRegion(frame, display, rect) {
+function cropFrozenDisplayRegion(frame, display, rect, viewport) {
   if (!frame || !frame.image || frame.image.isEmpty()) throw new Error('截图已失效，请重试')
   const size = frame.image.getSize()
-  const sx = size.width / display.bounds.width
-  const sy = size.height / display.bounds.height
-  const crop = {
-    x: clamp(Math.round(rect.x * sx), 0, Math.max(0, size.width - 1)),
-    y: clamp(Math.round(rect.y * sy), 0, Math.max(0, size.height - 1)),
-    width: clamp(Math.round(rect.width * sx), 1, size.width),
-    height: clamp(Math.round(rect.height * sy), 1, size.height),
-  }
-  crop.width = Math.min(crop.width, size.width - crop.x)
-  crop.height = Math.min(crop.height, size.height - crop.y)
+  const resolvedViewport = normalizeOverlayViewport(display, viewport)
+  const crop = mapOverlayRectToSize(rect, resolvedViewport, size)
   const cropped = frame.image.crop(crop)
   const croppedSize = cropped.getSize()
   return { imageDataUrl: cropped.toDataURL(), width: croppedSize.width, height: croppedSize.height }
 }
 
-module.exports = { captureFrozenDisplays, cropFrozenDisplayRegion }
+module.exports = {
+  captureFrozenDisplays,
+  cropFrozenDisplayRegion,
+  mapOverlayRectToSize,
+  resolveOverlaySelection,
+}

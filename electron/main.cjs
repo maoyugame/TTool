@@ -9,7 +9,7 @@ const { setupPlugins } = require('./plugins.cjs')
 const { setupHost } = require('./host/index.cjs')
 const { setupUpdater } = require('./updater.cjs')
 const { searchFiles, searchDeep } = require('./filesearch.cjs')
-const { captureFrozenDisplays, cropFrozenDisplayRegion } = require('./screenshot-freeze.cjs')
+const { captureFrozenDisplays, cropFrozenDisplayRegion, resolveOverlaySelection } = require('./screenshot-freeze.cjs')
 const { loadOverlayWithFrame, overlayFrameReceiverScript } = require('./screenshot-overlay-frame.cjs')
 const { createCodexUsageService } = require('./codex-usage.cjs')
 const { DEFAULT_CODEX_USAGE_CONFIG, normalizeWidgetOpacity, readCodexUsageConfigFile, writeCodexUsageConfigFile } = require('./codex-usage-config.cjs')
@@ -1208,7 +1208,14 @@ function submit(action) {
     return;
   }
   const resolved = action === 'default' ? META.defaultAction : action;
-  sendOverlay('select', { captureId: META.captureId, displayId: META.displayId, rect, action: resolved, annotations: annotationPayload() });
+  sendOverlay('select', {
+    captureId: META.captureId,
+    displayId: META.displayId,
+    rect,
+    viewport: { width: innerWidth, height: innerHeight },
+    action: resolved,
+    annotations: annotationPayload(),
+  });
 }
 window.addEventListener('mousedown', (e) => {
   const p = { x: e.clientX, y: e.clientY };
@@ -1956,12 +1963,8 @@ async function completeOverlaySelection(payload) {
   const capture = activeCapture
   const display = capture.displays.find((d) => d.id === Number(payload.displayId))
   if (!display) return { ok: false, error: '未检测到可用显示器' }
-  const rect = {
-    x: Math.round(Number(payload.rect && payload.rect.x) || 0),
-    y: Math.round(Number(payload.rect && payload.rect.y) || 0),
-    width: Math.round(Number(payload.rect && payload.rect.width) || 0),
-    height: Math.round(Number(payload.rect && payload.rect.height) || 0),
-  }
+  const selection = resolveOverlaySelection(display, payload.rect, payload.viewport)
+  const { rect, viewport, displayRect } = selection
   if (rect.width < 8 || rect.height < 8) {
     closeActiveOverlayWindows()
     activeCapture = null
@@ -1974,11 +1977,11 @@ async function completeOverlaySelection(payload) {
   closeActiveOverlayWindows()
   activeCapture = null
   try {
-    let shot = cropFrozenDisplayRegion(frozenFrame, display, rect)
+    let shot = cropFrozenDisplayRegion(frozenFrame, display, rect, viewport)
     shot = await renderAnnotatedCapture(shot, annotations, rect)
     rememberScreenshot(shot.imageDataUrl, { displayId: display.id })
     if (action === 'pin') {
-      const result = createPinWindow(shot.imageDataUrl, { displayId: display.id, sourceRect: rect })
+      const result = createPinWindow(shot.imageDataUrl, { displayId: display.id, sourceRect: displayRect })
       emitScreenshotStatus(result.ok ? 'info' : 'error', result.ok ? '已创建贴图' : result.error || '截图失败，请重试')
       return result.ok ? { ok: true } : { ok: false, error: result.error }
     }
