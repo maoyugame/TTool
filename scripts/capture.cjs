@@ -23,6 +23,32 @@ ipcMain.handle('translate', async (_e, { text, from, to }) => {
 })
 ipcMain.handle('clipboard:write', () => true)
 
+const CAPTURE_PIXEL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+3fO9WQAAAABJRU5ErkJggg=='
+const captureNow = Date.now()
+const captureHistory = [{
+  id: 'shot_capture_preview',
+  imageDataUrl: CAPTURE_PIXEL,
+  createdAt: captureNow - 60_000,
+  updatedAt: captureNow - 60_000,
+  width: 1920,
+  height: 1080,
+  byteLength: 2_480_000,
+  favorite: true,
+  source: 'screenshot',
+}]
+ipcMain.handle('screenshot:environment', () => ({
+  isDesktop: true,
+  platform: process.platform,
+  permission: 'granted',
+  displays: [{ id: 1, bounds: { x: 0, y: 0, width: 1920, height: 1080 }, workArea: { x: 0, y: 0, width: 1920, height: 1040 }, scaleFactor: 1.5, rotation: 0, primary: true }],
+  build: { appVersion: '0.4.0', revision: 'capture-qa', dirty: false, builtAt: new Date().toISOString(), electronVersion: process.versions.electron, chromeVersion: process.versions.chrome, captureCoreVersion: 2 },
+}))
+ipcMain.handle('screenshot:getConfig', () => ({ ok: true, config: { enabled: true, screenshot: 'Control+Alt+A', screenshotPin: 'Control+Alt+S' }, statuses: [{ key: 'screenshot', accelerator: 'Control+Alt+A', registered: true }, { key: 'screenshotPin', accelerator: 'Control+Alt+S', registered: true }] }))
+ipcMain.handle('screenshot:listPins', () => [])
+ipcMain.handle('screenshot:listHistory', () => captureHistory)
+ipcMain.handle('screenshot:historyStats', () => ({ count: 1, activeCount: 1, deletedCount: 0, favoriteCount: 1, byteLength: 2_480_000, limits: { maxItems: 100, maxBytes: 134_217_728 }, malformedMetadata: false }))
+ipcMain.handle('screenshot:consumeCaptures', () => [])
+
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 const run = (win, js) => win.webContents.executeJavaScript(js).catch(() => null)
 
@@ -104,6 +130,26 @@ async function scenario(win) {
     await wait(5000) // 等 MyMemory 返回
     return
   }
+  if (VIEW === 'screenshot') {
+    await wait(1200)
+    let opened = false
+    for (let attempt = 0; attempt < 6 && !opened; attempt += 1) {
+      win.webContents.send('ttool:open-tool', 'screenshot-pin')
+      await run(win, `(() => {
+        const row = [...document.querySelectorAll('.tool-row')].find((node) => node.textContent.includes('截图贴图'));
+        if (row) row.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      })()`)
+      await wait(350)
+      opened = Boolean(await run(win, `document.body.textContent.includes('状态与操作') && document.body.textContent.includes('截图历史')`))
+    }
+    console.log('SCREENSHOT OPEN: ' + (opened ? 'ready' : 'not-ready'))
+    if (!opened) throw new Error('Screenshot tool did not open in the hidden render harness')
+    await wait(1000)
+    const stable = Boolean(await run(win, `document.body.textContent.includes('状态与操作') && document.body.textContent.includes('截图历史')`))
+    console.log('SCREENSHOT VIEW: ' + (stable ? 'stable' : 'returned-home'))
+    if (!stable) throw new Error('Screenshot tool did not remain mounted in the hidden render harness')
+    return
+  }
   await wait(1800)
 }
 
@@ -113,12 +159,16 @@ app.whenReady().then(async () => {
     width: 1180,
     height: 800,
     show: process.env.CAP_SHOW === '1',
+    paintWhenInitiallyHidden: true,
     backgroundColor: '#0d0e14',
     webPreferences: {
       preload: path.join(__dirname, '..', 'electron', 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      paintWhenInitiallyHidden: true,
+      backgroundThrottling: false,
+      offscreen: process.env.CAP_SHOW !== '1',
     },
   })
   const updaterHost = setupUpdater({
@@ -131,6 +181,8 @@ app.whenReady().then(async () => {
   })
   await win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
   await scenario(win)
+  win.webContents.invalidate()
+  await wait(120)
   const img = await win.webContents.capturePage()
   const dir = path.join(__dirname, '..', '.verify')
   fs.mkdirSync(dir, { recursive: true })

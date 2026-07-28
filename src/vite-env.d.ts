@@ -50,7 +50,7 @@ interface TToolBridge {
   secrets: import('./platform/types').SecretsApi
   db: import('./platform/types').DbApi
   screenshot: import('./platform/types').ScreenshotApi & {
-    overlaySelect: (payload: { captureId: string; displayId: number; rect: import('./platform/types').Rect; action?: 'edit' | 'pin' | 'copy' | 'save' }) => Promise<import('./platform/types').SimpleResult>
+    overlaySelect: (payload: import('./platform/types').ScreenshotOverlaySelectionPayload) => Promise<import('./platform/types').SimpleResult>
     overlayCancel: (payload: { captureId: string; reason?: string }) => Promise<import('./platform/types').SimpleResult>
   }
 }

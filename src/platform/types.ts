@@ -177,6 +177,7 @@ export interface ScreenshotDisplayInfo {
   bounds: Rect
   workArea: Rect
   scaleFactor: number
+  rotation: number
   primary: boolean
 }
 
@@ -185,6 +186,15 @@ export interface ScreenshotEnvironment {
   platform: string
   permission: ScreenshotPermissionStatus
   displays: ScreenshotDisplayInfo[]
+  build: {
+    appVersion: string
+    revision: string
+    dirty: boolean
+    builtAt: string | null
+    electronVersion: string
+    chromeVersion: string
+    captureCoreVersion: number
+  }
 }
 
 export type ScreenshotCaptureSource = 'screenshot' | 'pin-annotate'
@@ -204,12 +214,55 @@ export interface ScreenshotRecentItem {
   id: string
   imageDataUrl: string
   createdAt: number
+  updatedAt: number
   width: number
   height: number
+  byteLength: number
+  favorite: boolean
+  deletedAt?: number
+  source?: string
   displayId?: number
 }
 
-export interface ScreenshotPinInfo {
+export interface ScreenshotHistoryOptions {
+  includeDeleted?: boolean
+  favoritesOnly?: boolean
+  limit?: number
+}
+
+export interface ScreenshotHistoryStats {
+  count: number
+  activeCount: number
+  deletedCount: number
+  favoriteCount: number
+  byteLength: number
+  limits: { maxItems: number; maxBytes: number }
+  malformedMetadata: boolean
+}
+
+export interface ScreenshotPinState {
+  zoom: number
+  opacity: number
+  rotation: number
+  flipX: boolean
+  flipY: boolean
+  locked: boolean
+  clickThrough: boolean
+  hidden: boolean
+  thumbnail: boolean
+}
+
+export type ScreenshotPinStateAction =
+  | { type: 'patch'; patch: Partial<ScreenshotPinState> }
+  | { type: 'reset'; state?: Partial<ScreenshotPinState> }
+  | { type: 'setZoom' | 'setOpacity' | 'setRotation'; value: number }
+  | { type: 'zoomBy' | 'opacityBy'; delta: number }
+  | { type: 'rotateBy'; degrees: number }
+  | { type: 'setFlipX' | 'setFlipY' | 'setLocked' | 'setClickThrough' | 'setHidden' | 'setThumbnail'; value: boolean }
+  | { type: 'toggleFlipX' | 'toggleFlipY' | 'toggleLocked' | 'toggleLock' | 'toggleClickThrough' | 'toggleHidden' | 'toggleThumbnail' }
+  | { type: 'setVisible'; value: boolean }
+
+export interface ScreenshotPinInfo extends ScreenshotPinState {
   id: string
   imageDataUrl: string
   createdAt: number
@@ -217,16 +270,19 @@ export interface ScreenshotPinInfo {
   height: number
   visible: boolean
   displayId?: number
-  opacity?: number
+  byteLength: number
+  bounds?: Rect
 }
 
 export interface ScreenshotPinOptions {
   displayId?: number
   sourceRect?: Rect
+  state?: Partial<ScreenshotPinState>
 }
 
 export interface ScreenshotRememberOptions {
   displayId?: number
+  source?: string
 }
 
 export interface ImageSaveResult {
@@ -246,6 +302,18 @@ export interface ScreenshotStatusEvent {
   message: string
 }
 
+export interface ScreenshotOverlaySelectionPayload {
+  captureId: string
+  displayId: number
+  rect: Rect
+  viewport: { width: number; height: number; devicePixelRatio?: number }
+  renderedImageRect: Rect
+  frameSize: { width: number; height: number }
+  coordinateSpace: 'overlay-css-px-v1'
+  action?: 'edit' | 'pin' | 'copy' | 'save'
+  annotations?: Array<Record<string, unknown>>
+}
+
 export interface ScreenshotApi {
   getEnvironment(): Promise<ScreenshotEnvironment>
   getConfig(): Promise<ScreenshotConfigResult>
@@ -256,19 +324,28 @@ export interface ScreenshotApi {
   onCapture(cb: (capture: ScreenshotCapture) => void): () => void
   onStatus(cb: (status: ScreenshotStatusEvent) => void): () => void
   listRecentScreenshots(): Promise<ScreenshotRecentItem[]>
+  listHistory(options?: ScreenshotHistoryOptions): Promise<ScreenshotRecentItem[]>
+  getHistoryItem(id: string, includeDeleted?: boolean): Promise<SimpleResult & { item?: ScreenshotRecentItem }>
+  historyStats(): Promise<ScreenshotHistoryStats>
   rememberScreenshot(dataUrl: string, options?: ScreenshotRememberOptions): Promise<SimpleResult & { item?: ScreenshotRecentItem }>
-  deleteRecentScreenshot(id: string): Promise<SimpleResult>
+  deleteRecentScreenshot(id: string): Promise<SimpleResult & { item?: ScreenshotRecentItem }>
+  setScreenshotFavorite(id: string, favorite: boolean): Promise<SimpleResult & { item?: ScreenshotRecentItem }>
+  restoreScreenshot(id: string): Promise<SimpleResult & { item?: ScreenshotRecentItem }>
+  quickSaveScreenshot(id: string): Promise<ImageSaveResult>
   onRecentScreenshotsChanged(cb: (items: ScreenshotRecentItem[]) => void): () => void
   copyImage(dataUrl: string): Promise<SimpleResult>
   saveImage(dataUrl: string, suggestedName?: string): Promise<ImageSaveResult>
   listPins(): Promise<ScreenshotPinInfo[]>
   createPin(dataUrl: string, options?: ScreenshotPinOptions): Promise<SimpleResult & { pin?: ScreenshotPinInfo }>
   updatePin(id: string, dataUrl: string): Promise<SimpleResult & { pin?: ScreenshotPinInfo }>
-  focusPin(id: string): Promise<SimpleResult>
-  setPinVisible(id: string, visible: boolean): Promise<SimpleResult>
+  updatePinState(id: string, action: ScreenshotPinStateAction): Promise<SimpleResult & { pin?: ScreenshotPinInfo }>
+  focusPin(id: string): Promise<SimpleResult & { pin?: ScreenshotPinInfo }>
+  setPinVisible(id: string, visible: boolean): Promise<SimpleResult & { pin?: ScreenshotPinInfo }>
   closePin(id: string): Promise<SimpleResult>
   closeAllPins(): Promise<SimpleResult>
   annotatePin(id: string): Promise<SimpleResult>
+  copyPin(id: string): Promise<SimpleResult>
+  savePin(id: string): Promise<ImageSaveResult>
   onPinsChanged(cb: (pins: ScreenshotPinInfo[]) => void): () => void
 }
 

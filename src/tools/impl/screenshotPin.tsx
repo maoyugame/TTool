@@ -8,7 +8,9 @@ import { normalizeRectLike, rectFromPoints, shapeFromDrag, type Point, type Rect
 import type {
   ScreenshotCapture,
   ScreenshotEnvironment,
+  ScreenshotHistoryStats,
   ScreenshotPinInfo,
+  ScreenshotPinStateAction,
   ScreenshotRecentItem,
   ScreenshotShortcutConfig,
   ScreenshotShortcutKey,
@@ -24,13 +26,16 @@ const DEFAULT_CONFIG: ScreenshotShortcutConfig = {
 const TOOL_ID = 'screenshot-pin'
 const RESERVED = new Set(['Alt+Space', 'Control+Alt+Space'].map(shortcutId))
 
-type AnnotationTool = 'select' | 'arrow' | 'rect' | 'circle' | 'brush' | 'text' | 'mosaic' | 'pan'
+type AnnotationTool = 'select' | 'arrow' | 'line' | 'rect' | 'circle' | 'brush' | 'highlighter' | 'text' | 'number' | 'mosaic' | 'eraser' | 'pan'
 type AnnotationShape =
   | { kind: 'arrow'; x1: number; y1: number; x2: number; y2: number; color: string; width: number }
+  | { kind: 'line'; x1: number; y1: number; x2: number; y2: number; color: string; width: number }
   | { kind: 'rect'; x: number; y: number; width: number; height: number; color: string; lineWidth: number }
   | { kind: 'circle'; x: number; y: number; width: number; height: number; color: string; lineWidth: number }
   | { kind: 'brush'; points: Point[]; color: string; width: number }
+  | { kind: 'highlighter'; points: Point[]; color: string; width: number; opacity: number }
   | { kind: 'text'; x: number; y: number; text: string; color: string; fontSize: number }
+  | { kind: 'number'; x: number; y: number; value: number; color: string; fontSize: number }
   | { kind: 'mosaic'; points: Point[]; size: number; block: number }
 type Annotation = AnnotationShape & { id: string }
 type ViewMode = 'fit' | 'manual'
@@ -47,16 +52,57 @@ const MIN_ZOOM = 0.25
 const MAX_ZOOM = 4
 const ZOOM_STEP = 1.25
 const SELECT_COLOR = '#35d5c7'
+const EDITOR_PREFS_KEY = 'ttool.screenshot.editor-style.v1'
 const EDITOR_TOOL_OPTIONS: { key: AnnotationTool; label: string }[] = [
   { key: 'select', label: '选择' },
   { key: 'arrow', label: '箭头' },
+  { key: 'line', label: '直线' },
   { key: 'rect', label: '矩形' },
   { key: 'circle', label: '圆形' },
   { key: 'brush', label: '画笔' },
+  { key: 'highlighter', label: '荧光笔' },
   { key: 'text', label: '文本' },
+  { key: 'number', label: '编号' },
   { key: 'mosaic', label: '马赛克' },
+  { key: 'eraser', label: '橡皮擦' },
   { key: 'pan', label: '拖拽' },
 ]
+
+type EditorPrefs = {
+  tool: AnnotationTool
+  color: string
+  lineWidth: number
+  highlighterWidth: number
+  mosaicSize: number
+  fontSize: number
+}
+
+const DEFAULT_EDITOR_PREFS: EditorPrefs = {
+  tool: 'arrow',
+  color: '#ff3b30',
+  lineWidth: 4,
+  highlighterWidth: 28,
+  mosaicSize: 32,
+  fontSize: 28,
+}
+
+function readEditorPrefs(): EditorPrefs {
+  if (typeof window === 'undefined') return { ...DEFAULT_EDITOR_PREFS }
+  try {
+    const raw = JSON.parse(window.localStorage.getItem(EDITOR_PREFS_KEY) || '{}') as Partial<EditorPrefs>
+    const tools = new Set(EDITOR_TOOL_OPTIONS.map((item) => item.key))
+    return {
+      tool: tools.has(raw.tool as AnnotationTool) && raw.tool !== 'select' && raw.tool !== 'eraser' && raw.tool !== 'pan' ? raw.tool as AnnotationTool : DEFAULT_EDITOR_PREFS.tool,
+      color: /^#[0-9a-f]{6}$/i.test(String(raw.color || '')) ? String(raw.color) : DEFAULT_EDITOR_PREFS.color,
+      lineWidth: clamp(Number(raw.lineWidth) || DEFAULT_EDITOR_PREFS.lineWidth, 2, 16),
+      highlighterWidth: clamp(Number(raw.highlighterWidth) || DEFAULT_EDITOR_PREFS.highlighterWidth, 8, 64),
+      mosaicSize: clamp(Number(raw.mosaicSize) || DEFAULT_EDITOR_PREFS.mosaicSize, 12, 72),
+      fontSize: clamp(Number(raw.fontSize) || DEFAULT_EDITOR_PREFS.fontSize, 14, 64),
+    }
+  } catch {
+    return { ...DEFAULT_EDITOR_PREFS }
+  }
+}
 
 const buttonStyle: CSSProperties = {
   height: 34,
@@ -519,6 +565,13 @@ function dimensionsText(item: { width: number; height: number }) {
   return `${item.width} × ${item.height}px`
 }
 
+function formatBytes(bytes: number) {
+  const value = Math.max(0, Number(bytes) || 0)
+  if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(value >= 10 * 1024 * 1024 ? 0 : 1)} MB`
+  if (value >= 1024) return `${(value / 1024).toFixed(value >= 10 * 1024 ? 0 : 1)} KB`
+  return `${Math.round(value)} B`
+}
+
 function ScreenshotPinTool() {
   const { flash } = useToolbox()
   const api = screenshotHost
@@ -527,6 +580,7 @@ function ScreenshotPinTool() {
   const [statuses, setStatuses] = useState<ScreenshotShortcutStatus[]>([])
   const [pins, setPins] = useState<ScreenshotPinInfo[]>([])
   const [recents, setRecents] = useState<ScreenshotRecentItem[]>([])
+  const [historyStats, setHistoryStats] = useState<ScreenshotHistoryStats | null>(null)
   const [capture, setCapture] = useState<ScreenshotCapture | null>(null)
   const [latest, setLatest] = useState('')
   const [error, setError] = useState('')
@@ -546,11 +600,12 @@ function ScreenshotPinTool() {
 
   const refresh = useCallback(async () => {
     if (!api) return
-    const [nextEnv, nextConfig, nextPins, nextRecents, pending] = await Promise.all([
+    const [nextEnv, nextConfig, nextPins, nextRecents, nextHistoryStats, pending] = await Promise.all([
       api.getEnvironment(),
       api.getConfig(),
       api.listPins(),
-      api.listRecentScreenshots(),
+      api.listHistory({ includeDeleted: true }),
+      api.historyStats(),
       api.consumeCaptures(),
     ])
     setEnv(nextEnv)
@@ -558,6 +613,7 @@ function ScreenshotPinTool() {
     setStatuses(nextConfig.statuses)
     setPins(nextPins)
     setRecents(nextRecents)
+    setHistoryStats(nextHistoryStats)
     pending.forEach(receiveCapture)
   }, [api, receiveCapture])
 
@@ -566,7 +622,10 @@ function ScreenshotPinTool() {
     void refresh()
     const offCapture = api.onCapture(receiveCapture)
     const offPins = api.onPinsChanged(setPins)
-    const offRecents = api.onRecentScreenshotsChanged(setRecents)
+    const offRecents = api.onRecentScreenshotsChanged((items) => {
+      setRecents(items)
+      void api.historyStats().then(setHistoryStats)
+    })
     const offStatus = api.onStatus((s) => {
       setLatest(s.message)
       setError(s.level === 'error' ? s.message : '')
@@ -611,6 +670,28 @@ function ScreenshotPinTool() {
     },
     [api]
   )
+
+  const readFullHistoryItem = useCallback(async (item: ScreenshotRecentItem) => {
+    if (!api) return null
+    const result = await api.getHistoryItem(item.id)
+    if (!result.ok || !result.item) {
+      flash(result.error || '读取截图历史失败')
+      return null
+    }
+    return result.item
+  }, [api, flash])
+
+  const copyDiagnostics = useCallback(async () => {
+    const payload = {
+      capturedAt: new Date().toISOString(),
+      environment: env,
+      shortcutConfig: { ...config, screenshot: config.screenshot, screenshotPin: config.screenshotPin },
+      shortcutStatuses: statuses,
+      latestStatus: error || latest || null,
+    }
+    await platform.copyText(JSON.stringify(payload, null, 2))
+    flash('截图诊断信息已复制')
+  }, [config, env, error, flash, latest, statuses])
 
   const saveShortcut = useCallback(
     (key: ScreenshotShortcutKey, accelerator: string) => {
@@ -672,6 +753,7 @@ function ScreenshotPinTool() {
           error={error}
           onShot={() => void startCapture('edit')}
           onPin={() => void startCapture('pin')}
+          onCopyDiagnostics={() => void copyDiagnostics()}
           disabled={!config.enabled}
           onToggleEnabled={(v) => void applyConfig({ ...config, enabled: v })}
           recording={recording}
@@ -683,13 +765,20 @@ function ScreenshotPinTool() {
           <div className="screenshot-pin-left">
             <RecentScreenshotsPanel
               items={recents}
+              stats={historyStats}
               onOpen={(item) => {
-                setCapture({ ...item, source: 'screenshot' })
-                setLatest('已打开最近截图')
+                void readFullHistoryItem(item).then((full) => {
+                  if (!full) return
+                  setCapture({ ...full, source: 'screenshot' })
+                  setLatest('已打开截图历史')
+                })
               }}
-              onPin={(item) => void api.createPin(item.imageDataUrl, { displayId: item.displayId }).then((r) => flash(r.ok ? '已创建贴图' : r.error || '贴图失败'))}
-              onCopy={(item) => void api.copyImage(item.imageDataUrl).then((r) => flash(r.ok ? '图片已复制' : r.error || '复制失败'))}
-              onDelete={(id) => void api.deleteRecentScreenshot(id).then((r) => flash(r.ok ? '已删除最近截图' : r.error || '删除失败'))}
+              onPin={(item) => void readFullHistoryItem(item).then((full) => full && api.createPin(full.imageDataUrl, { displayId: full.displayId }).then((r) => flash(r.ok ? '已创建贴图' : r.error || '贴图失败')))}
+              onCopy={(item) => void readFullHistoryItem(item).then((full) => full && api.copyImage(full.imageDataUrl).then((r) => flash(r.ok ? '图片已复制' : r.error || '复制失败')))}
+              onFavorite={(item) => void api.setScreenshotFavorite(item.id, !item.favorite).then((r) => flash(r.ok ? (item.favorite ? '已取消收藏' : '已收藏') : r.error || '收藏失败'))}
+              onQuickSave={(item) => void api.quickSaveScreenshot(item.id).then((r) => flash(r.ok ? `已保存到 ${r.path || '图片目录'}` : r.error || '快速保存失败'))}
+              onRestore={(id) => void api.restoreScreenshot(id).then((r) => flash(r.ok ? '截图已恢复' : r.error || '恢复失败'))}
+              onDelete={(id) => void api.deleteRecentScreenshot(id).then((r) => flash(r.ok ? '截图已移入回收区' : r.error || '删除失败'))}
               onShot={() => void startCapture('edit')}
               disabled={!config.enabled}
             />
@@ -716,9 +805,10 @@ function ScreenshotPinTool() {
               onPin={() => void startCapture('pin')}
               onFocus={(id) => void api.focusPin(id)}
               onToggleVisible={(pin) => void api.setPinVisible(pin.id, !pin.visible)}
+              onState={(id, action) => void api.updatePinState(id, action)}
               onAnnotate={(id) => void api.annotatePin(id)}
-              onCopy={(pin) => void api.copyImage(pin.imageDataUrl).then((r) => flash(r.ok ? '图片已复制' : r.error || '复制失败'))}
-              onSave={(pin) => void api.saveImage(pin.imageDataUrl, 'ttool-pin.png').then((r) => !r.canceled && flash(r.ok ? '图片已保存' : r.error || '保存失败'))}
+              onCopy={(pin) => void api.copyPin(pin.id).then((r) => flash(r.ok ? '图片已复制' : r.error || '复制失败'))}
+              onSave={(pin) => void api.savePin(pin.id).then((r) => !r.canceled && flash(r.ok ? '图片已保存' : r.error || '保存失败'))}
               onClose={(id) => void api.closePin(id)}
               onCloseAll={() => void api.closeAllPins()}
             />
@@ -731,44 +821,75 @@ function ScreenshotPinTool() {
 
 function RecentScreenshotsPanel({
   items,
+  stats,
   onOpen,
   onPin,
   onCopy,
+  onFavorite,
+  onQuickSave,
+  onRestore,
   onDelete,
   onShot,
   disabled,
 }: {
   items: ScreenshotRecentItem[]
+  stats: ScreenshotHistoryStats | null
   onOpen: (item: ScreenshotRecentItem) => void
   onPin: (item: ScreenshotRecentItem) => void
   onCopy: (item: ScreenshotRecentItem) => void
+  onFavorite: (item: ScreenshotRecentItem) => void
+  onQuickSave: (item: ScreenshotRecentItem) => void
+  onRestore: (id: string) => void
   onDelete: (id: string) => void
   onShot: () => void
   disabled: boolean
 }) {
+  const [mode, setMode] = useState<'active' | 'favorites' | 'trash'>('active')
+  const visibleItems = useMemo(() => items.filter((item) => {
+    if (mode === 'trash') return item.deletedAt !== undefined
+    if (item.deletedAt !== undefined) return false
+    return mode !== 'favorites' || item.favorite
+  }), [items, mode])
   return (
-    <Panel label="最近截图" right={<Chip>{items.length}/5</Chip>} flex={false}>
+    <Panel
+      label="截图历史"
+      right={<div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Chip>{stats ? `${stats.activeCount}/${stats.limits.maxItems}` : items.length}</Chip>{stats && <Chip>{formatBytes(stats.byteLength)}</Chip>}</div>}
+      flex={false}
+    >
       <div style={{ padding: 14 }}>
-        {!items.length ? (
+        <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+          <Button primary={mode === 'active'} onClick={() => setMode('active')}>全部</Button>
+          <Button primary={mode === 'favorites'} onClick={() => setMode('favorites')}>收藏 {stats?.favoriteCount || 0}</Button>
+          <Button primary={mode === 'trash'} onClick={() => setMode('trash')}>回收区 {stats?.deletedCount || 0}</Button>
+        </div>
+        {!visibleItems.length ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, color: 'var(--text2)', fontSize: 13 }}>
-            <span>暂无最近截图</span>
+            <span>{mode === 'trash' ? '回收区为空' : mode === 'favorites' ? '暂无收藏截图' : '暂无截图历史'}</span>
             <Button primary disabled={disabled} onClick={onShot}>截图</Button>
           </div>
         ) : (
           <div className="screenshot-pin-recent-grid">
-            {items.map((item) => (
-              <div key={item.id} className="screenshot-pin-recent-card">
+            {visibleItems.map((item) => (
+              <div key={item.id} className="screenshot-pin-recent-card" style={item.deletedAt ? { opacity: 0.72 } : undefined}>
                 <img className="screenshot-pin-thumb" src={item.imageDataUrl} alt="" />
                 <div className="screenshot-pin-card-body">
                   <div className="screenshot-pin-card-meta">
-                    <span className="screenshot-pin-card-title">{dimensionsText(item)}</span>
-                    <span className="screenshot-pin-card-time">{fmtTime(item.createdAt)}</span>
+                    <span className="screenshot-pin-card-title">{item.favorite ? '★ ' : ''}{dimensionsText(item)}</span>
+                    <span className="screenshot-pin-card-time">{fmtTime(item.createdAt)} · {formatBytes(item.byteLength)}</span>
                   </div>
                   <div className="screenshot-pin-card-actions">
-                    <Button primary onClick={() => onOpen(item)}>打开</Button>
-                    <Button onClick={() => onPin(item)}>贴图</Button>
-                    <Button onClick={() => onCopy(item)}>复制</Button>
-                    <Button onClick={() => onDelete(item.id)}>删除</Button>
+                    {item.deletedAt ? (
+                      <Button primary onClick={() => onRestore(item.id)}>恢复</Button>
+                    ) : (
+                      <>
+                        <Button primary onClick={() => onOpen(item)}>打开</Button>
+                        <Button onClick={() => onPin(item)}>贴图</Button>
+                        <Button onClick={() => onCopy(item)}>复制</Button>
+                        <Button onClick={() => onQuickSave(item)}>快速保存</Button>
+                        <Button onClick={() => onFavorite(item)}>{item.favorite ? '取消收藏' : '收藏'}</Button>
+                        <Button onClick={() => onDelete(item.id)}>删除</Button>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -788,6 +909,7 @@ function StatusActionBar({
   error,
   onShot,
   onPin,
+  onCopyDiagnostics,
   disabled,
   onToggleEnabled,
   recording,
@@ -801,6 +923,7 @@ function StatusActionBar({
   error: string
   onShot: () => void
   onPin: () => void
+  onCopyDiagnostics: () => void
   disabled: boolean
   onToggleEnabled: (enabled: boolean) => void
   recording: ScreenshotShortcutKey | null
@@ -819,6 +942,8 @@ function StatusActionBar({
             <Chip good={platform.isDesktop}>桌面运行时</Chip>
             <Chip good={env?.permission === 'granted'} bad={permissionText(env) === '需要屏幕录制权限'}>{permissionText(env)}</Chip>
             <Chip>{env ? `${env.displays.length} 个显示器` : '显示器检测中'}</Chip>
+            {env?.build && <Chip>v{env.build.appVersion} · {env.build.revision}{env.build.dirty ? '-dirty' : ''}</Chip>}
+            {env?.build && <Chip>Capture Core {env.build.captureCoreVersion}</Chip>}
           </div>
           {(latest || error) && (
             <div className={`screenshot-pin-status-message${error ? ' is-error' : ''}`}>
@@ -838,6 +963,7 @@ function StatusActionBar({
             <Toggle checked={config.enabled} onChange={onToggleEnabled} />
             <Button primary disabled={disabled} onClick={onShot}>截图</Button>
             <Button disabled={disabled} onClick={onPin}>截图并贴图</Button>
+            <Button onClick={onCopyDiagnostics}>复制诊断</Button>
           </div>
         </div>
       </div>
@@ -920,6 +1046,7 @@ function PinsPanel({
   onPin,
   onFocus,
   onToggleVisible,
+  onState,
   onAnnotate,
   onCopy,
   onSave,
@@ -930,6 +1057,7 @@ function PinsPanel({
   onPin: () => void
   onFocus: (id: string) => void
   onToggleVisible: (pin: ScreenshotPinInfo) => void
+  onState: (id: string, action: ScreenshotPinStateAction) => void
   onAnnotate: (id: string) => void
   onCopy: (pin: ScreenshotPinInfo) => void
   onSave: (pin: ScreenshotPinInfo) => void
@@ -937,7 +1065,7 @@ function PinsPanel({
   onCloseAll: () => void
 }) {
   return (
-    <Panel label="当前贴图" right={pins.length > 1 ? <Button onClick={onCloseAll}>关闭全部</Button> : null} flex={false}>
+    <Panel label="当前贴图 · 自动恢复" right={pins.length > 1 ? <Button onClick={onCloseAll}>关闭全部</Button> : null} flex={false}>
       <div style={{ padding: 14 }}>
         {!pins.length ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, color: 'var(--text2)', fontSize: 13 }}>
@@ -952,11 +1080,21 @@ function PinsPanel({
                 <div className="screenshot-pin-card-body">
                   <div className="screenshot-pin-card-meta">
                     <span className="screenshot-pin-card-title">{dimensionsText(pin)}</span>
-                    <span className="screenshot-pin-card-time">{fmtTime(pin.createdAt)}</span>
+                    <span className="screenshot-pin-card-time">{Math.round(pin.zoom * 100)}% · 透明 {Math.round(pin.opacity * 100)}% · {pin.rotation}°</span>
                   </div>
                   <div className="screenshot-pin-card-actions">
                     <Button onClick={() => onFocus(pin.id)}>聚焦</Button>
                     <Button onClick={() => onToggleVisible(pin)}>{pin.visible ? '隐藏' : '显示'}</Button>
+                    <Button onClick={() => onState(pin.id, { type: 'zoomBy', delta: -0.1 })}>缩小</Button>
+                    <Button onClick={() => onState(pin.id, { type: 'zoomBy', delta: 0.1 })}>放大</Button>
+                    <Button onClick={() => onState(pin.id, { type: 'opacityBy', delta: -0.05 })}>淡化</Button>
+                    <Button onClick={() => onState(pin.id, { type: 'opacityBy', delta: 0.05 })}>加深</Button>
+                    <Button onClick={() => onState(pin.id, { type: 'rotateBy', degrees: 90 })}>旋转</Button>
+                    <Button onClick={() => onState(pin.id, { type: 'toggleFlipX' })}>{pin.flipX ? '取消水平翻转' : '水平翻转'}</Button>
+                    <Button onClick={() => onState(pin.id, { type: 'toggleFlipY' })}>{pin.flipY ? '取消垂直翻转' : '垂直翻转'}</Button>
+                    <Button onClick={() => onState(pin.id, { type: 'toggleLocked' })}>{pin.locked ? '解锁' : '锁定'}</Button>
+                    <Button onClick={() => onState(pin.id, { type: 'toggleClickThrough' })}>{pin.clickThrough ? '关闭穿透' : '鼠标穿透'}</Button>
+                    <Button onClick={() => onState(pin.id, { type: 'toggleThumbnail' })}>{pin.thumbnail ? '恢复尺寸' : '缩略'}</Button>
                     <Button onClick={() => onAnnotate(pin.id)}>标注</Button>
                     <Button onClick={() => onCopy(pin)}>复制</Button>
                     <Button onClick={() => onSave(pin)}>保存</Button>
@@ -995,7 +1133,7 @@ function clamp(n: number, min: number, max: number) {
 }
 
 function cloneAnnotation(a: Annotation): Annotation {
-  if (a.kind === 'brush') return { ...a, points: a.points.map((p) => ({ ...p })) }
+  if (a.kind === 'brush' || a.kind === 'highlighter') return { ...a, points: a.points.map((p) => ({ ...p })) }
   if (a.kind === 'mosaic') return { ...a, points: a.points.map((p) => ({ ...p })) }
   return { ...a }
 }
@@ -1047,13 +1185,14 @@ function textWidth(a: Extract<Annotation, { kind: 'text' }>) {
 }
 
 function annotationBounds(a: Annotation): Rect {
-  if (a.kind === 'arrow') {
+  if (a.kind === 'arrow' || a.kind === 'line') {
     const pad = Math.max(8, a.width * 3)
     return pointsBounds([{ x: a.x1, y: a.y1 }, { x: a.x2, y: a.y2 }], pad)
   }
   if (a.kind === 'rect' || a.kind === 'circle') return expandRect(normalizeRectLike(a), Math.max(4, a.lineWidth / 2))
-  if (a.kind === 'brush') return pointsBounds(a.points, Math.max(4, a.width / 2))
+  if (a.kind === 'brush' || a.kind === 'highlighter') return pointsBounds(a.points, Math.max(4, a.width / 2))
   if (a.kind === 'text') return { x: a.x, y: a.y, width: textWidth(a), height: Math.max(18, a.fontSize * 1.25) }
+  if (a.kind === 'number') return { x: a.x - a.fontSize / 2, y: a.y - a.fontSize / 2, width: a.fontSize, height: a.fontSize }
   return pointsBounds(a.points, Math.max(6, a.size / 2))
 }
 
@@ -1086,13 +1225,14 @@ function pointInEllipse(p: Point, r: Rect, pad: number) {
 
 function hitAnnotation(a: Annotation, p: Point, zoom: number) {
   const uiPad = 6 / Math.max(zoom, 0.01)
-  if (a.kind === 'arrow') {
+  if (a.kind === 'arrow' || a.kind === 'line') {
     return distanceToSegment(p, { x: a.x1, y: a.y1 }, { x: a.x2, y: a.y2 }) <= Math.max(8 / zoom, a.width / 2 + 4)
   }
   if (a.kind === 'rect') return pointInRect(p, expandRect(normalizeRectLike(a), uiPad + a.lineWidth / 2))
   if (a.kind === 'circle') return pointInEllipse(p, normalizeRectLike(a), uiPad + a.lineWidth / 2)
-  if (a.kind === 'brush') return hitPolyline(a.points, p, a.width / 2 + uiPad)
+  if (a.kind === 'brush' || a.kind === 'highlighter') return hitPolyline(a.points, p, a.width / 2 + uiPad)
   if (a.kind === 'text') return pointInRect(p, expandRect(annotationBounds(a), uiPad))
+  if (a.kind === 'number') return Math.hypot(p.x - a.x, p.y - a.y) <= a.fontSize / 2 + uiPad
   return hitPolyline(a.points, p, a.size / 2 + uiPad)
 }
 
@@ -1124,10 +1264,10 @@ function selectionModeFromEvent(e: PointerEvent<HTMLCanvasElement>): SelectionMo
 }
 
 function moveAnnotation(a: Annotation, dx: number, dy: number): Annotation {
-  if (a.kind === 'arrow') return { ...a, x1: a.x1 + dx, y1: a.y1 + dy, x2: a.x2 + dx, y2: a.y2 + dy }
+  if (a.kind === 'arrow' || a.kind === 'line') return { ...a, x1: a.x1 + dx, y1: a.y1 + dy, x2: a.x2 + dx, y2: a.y2 + dy }
   if (a.kind === 'rect' || a.kind === 'circle') return { ...a, x: a.x + dx, y: a.y + dy }
-  if (a.kind === 'brush') return { ...a, points: a.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) }
-  if (a.kind === 'text') return { ...a, x: a.x + dx, y: a.y + dy }
+  if (a.kind === 'brush' || a.kind === 'highlighter') return { ...a, points: a.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) }
+  if (a.kind === 'text' || a.kind === 'number') return { ...a, x: a.x + dx, y: a.y + dy }
   return { ...a, points: a.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) }
 }
 
@@ -1153,13 +1293,13 @@ function moveAnnotations(annotations: Annotation[], ids: string[], dx: number, d
 
 function isValidAnnotation(ann: Annotation | null) {
   if (!ann) return false
-  if (ann.kind === 'brush' && ann.points.length < 2) return false
+  if ((ann.kind === 'brush' || ann.kind === 'highlighter') && ann.points.length < 2) return false
   if (ann.kind === 'mosaic' && ann.points.length < 2) return false
   if (ann.kind === 'rect' || ann.kind === 'circle') {
     const r = normalizeRectLike(ann)
     if (r.width < 4 || r.height < 4) return false
   }
-  if (ann.kind === 'arrow' && Math.hypot(ann.x2 - ann.x1, ann.y2 - ann.y1) < 4) return false
+  if ((ann.kind === 'arrow' || ann.kind === 'line') && Math.hypot(ann.x2 - ann.x1, ann.y2 - ann.y1) < 4) return false
   return true
 }
 
@@ -1201,6 +1341,49 @@ function drawBrush(ctx: CanvasRenderingContext2D, a: Extract<Annotation, { kind:
   ctx.moveTo(a.points[0].x, a.points[0].y)
   for (const p of a.points.slice(1)) ctx.lineTo(p.x, p.y)
   ctx.stroke()
+}
+
+function drawLine(ctx: CanvasRenderingContext2D, a: Extract<Annotation, { kind: 'line' }>) {
+  ctx.save()
+  ctx.strokeStyle = a.color
+  ctx.lineWidth = a.width
+  ctx.lineCap = 'round'
+  ctx.beginPath()
+  ctx.moveTo(a.x1, a.y1)
+  ctx.lineTo(a.x2, a.y2)
+  ctx.stroke()
+  ctx.restore()
+}
+
+function drawHighlighter(ctx: CanvasRenderingContext2D, a: Extract<Annotation, { kind: 'highlighter' }>) {
+  if (a.points.length < 2) return
+  ctx.save()
+  ctx.globalAlpha = clamp(a.opacity, 0.1, 0.8)
+  ctx.globalCompositeOperation = 'source-over'
+  ctx.strokeStyle = a.color
+  ctx.lineWidth = a.width
+  ctx.lineJoin = 'round'
+  ctx.lineCap = 'round'
+  ctx.beginPath()
+  ctx.moveTo(a.points[0].x, a.points[0].y)
+  for (const p of a.points.slice(1)) ctx.lineTo(p.x, p.y)
+  ctx.stroke()
+  ctx.restore()
+}
+
+function drawNumberMarker(ctx: CanvasRenderingContext2D, a: Extract<Annotation, { kind: 'number' }>) {
+  const radius = Math.max(8, a.fontSize / 2)
+  ctx.save()
+  ctx.fillStyle = a.color
+  ctx.beginPath()
+  ctx.arc(a.x, a.y, radius, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.fillStyle = '#fff'
+  ctx.font = `700 ${Math.max(11, a.fontSize * 0.58)}px system-ui,-apple-system,Segoe UI,sans-serif`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(String(a.value), a.x, a.y + 0.5)
+  ctx.restore()
 }
 
 function drawMosaicPatch(ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number, blockSize: number) {
@@ -1256,7 +1439,9 @@ function drawMosaic(ctx: CanvasRenderingContext2D, a: Extract<Annotation, { kind
 
 function drawAnnotation(ctx: CanvasRenderingContext2D, a: Annotation) {
   if (a.kind === 'arrow') drawArrow(ctx, a)
+  else if (a.kind === 'line') drawLine(ctx, a)
   else if (a.kind === 'brush') drawBrush(ctx, a)
+  else if (a.kind === 'highlighter') drawHighlighter(ctx, a)
   else if (a.kind === 'rect') {
     const r = normalizeRectLike(a)
     ctx.strokeStyle = a.color
@@ -1274,6 +1459,8 @@ function drawAnnotation(ctx: CanvasRenderingContext2D, a: Annotation) {
     ctx.font = `${a.fontSize}px system-ui,-apple-system,Segoe UI,sans-serif`
     ctx.textBaseline = 'top'
     ctx.fillText(a.text, a.x, a.y)
+  } else if (a.kind === 'number') {
+    drawNumberMarker(ctx, a)
   } else {
     drawMosaic(ctx, a)
   }
@@ -1386,6 +1573,7 @@ function RangeControl({
 function AnnotationEditor({ capture, onCancel, onDone }: { capture: ScreenshotCapture; onCancel: () => void; onDone: () => void }) {
   const { flash } = useToolbox()
   const api = screenshotHost
+  const editorPrefs = useMemo(readEditorPrefs, [])
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const textInputRef = useRef<HTMLInputElement | null>(null)
@@ -1395,11 +1583,12 @@ function AnnotationEditor({ capture, onCancel, onDone }: { capture: ScreenshotCa
   const interactionRef = useRef<EditorInteraction | null>(null)
   const spacePanRef = useRef(false)
   const [baseImage, setBaseImage] = useState<HTMLImageElement | null>(null)
-  const [tool, setTool] = useState<AnnotationTool>('arrow')
-  const [color, setColor] = useState('#ff3b30')
-  const [lineWidth, setLineWidth] = useState(4)
-  const [mosaicSize, setMosaicSize] = useState(32)
-  const [fontSize, setFontSize] = useState(28)
+  const [tool, setTool] = useState<AnnotationTool>(editorPrefs.tool)
+  const [color, setColor] = useState(editorPrefs.color)
+  const [lineWidth, setLineWidth] = useState(editorPrefs.lineWidth)
+  const [highlighterWidth, setHighlighterWidth] = useState(editorPrefs.highlighterWidth)
+  const [mosaicSize, setMosaicSize] = useState(editorPrefs.mosaicSize)
+  const [fontSize, setFontSize] = useState(editorPrefs.fontSize)
   const [shapeText, setShapeText] = useState(false)
   const [annotations, setAnnotations] = useState<Annotation[]>([])
   const [undoStack, setUndoStack] = useState<Annotation[][]>([])
@@ -1411,6 +1600,21 @@ function AnnotationEditor({ capture, onCancel, onDone }: { capture: ScreenshotCa
   const [zoom, setZoom] = useState(1)
   const [viewMode, setViewMode] = useState<ViewMode>('fit')
   const [spacePan, setSpacePan] = useState(false)
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(EDITOR_PREFS_KEY, JSON.stringify({
+        tool,
+        color,
+        lineWidth,
+        highlighterWidth,
+        mosaicSize,
+        fontSize,
+      } satisfies EditorPrefs))
+    } catch {
+      /* Style persistence is best-effort and must not interrupt editing. */
+    }
+  }, [color, fontSize, highlighterWidth, lineWidth, mosaicSize, tool])
 
   useEffect(() => {
     let alive = true
@@ -1620,6 +1824,18 @@ function AnnotationEditor({ capture, onCancel, onDone }: { capture: ScreenshotCa
       setTextDraft({ id, x: p.x, y: p.y, text: '', createdAt: Date.now(), protectInitialBlur: true })
       return
     }
+    if (tool === 'eraser') {
+      e.preventDefault()
+      const hit = topHitAnnotation(annotations, p, zoom)
+      if (hit) applyAnnotationChange((prev) => prev.filter((ann) => ann.id !== hit.id), { clearSelection: true })
+      return
+    }
+    if (tool === 'number') {
+      e.preventDefault()
+      const value = annotations.reduce((max, ann) => ann.kind === 'number' ? Math.max(max, ann.value) : max, 0) + 1
+      commit({ id: nextAnnotationId(), kind: 'number', x: p.x, y: p.y, value, color, fontSize })
+      return
+    }
     if (textDraft) commitTextDraft(textDraft, textDraft.text)
     setSelectedIds([])
     setInteraction({ kind: 'draw', start: p })
@@ -1629,7 +1845,9 @@ function AnnotationEditor({ capture, onCancel, onDone }: { capture: ScreenshotCa
       /* 合成事件或异常指针序列不应中断绘制初始化。 */
     }
     if (tool === 'brush') setDraft({ id: nextAnnotationId(), kind: 'brush', points: [p], color, width: lineWidth })
+    else if (tool === 'highlighter') setDraft({ id: nextAnnotationId(), kind: 'highlighter', points: [p], color, width: highlighterWidth, opacity: 0.36 })
     else if (tool === 'arrow') setDraft({ id: nextAnnotationId(), kind: 'arrow', x1: p.x, y1: p.y, x2: p.x, y2: p.y, color, width: lineWidth })
+    else if (tool === 'line') setDraft({ id: nextAnnotationId(), kind: 'line', x1: p.x, y1: p.y, x2: p.x, y2: p.y, color, width: lineWidth })
     else if (tool === 'rect') setDraft({ id: nextAnnotationId(), kind: 'rect', x: p.x, y: p.y, width: 0, height: 0, color, lineWidth })
     else if (tool === 'circle') setDraft({ id: nextAnnotationId(), kind: 'circle', x: p.x, y: p.y, width: 0, height: 0, color, lineWidth })
     else setDraft({ id: nextAnnotationId(), kind: 'mosaic', points: [p], size: mosaicSize, block: Math.max(6, Math.round(mosaicSize / 3)) })
@@ -1659,8 +1877,8 @@ function AnnotationEditor({ capture, onCancel, onDone }: { capture: ScreenshotCa
       return
     }
     if (!draft) return
-    if (draft.kind === 'brush') setDraft({ ...draft, points: [...draft.points, p] })
-    else if (draft.kind === 'arrow') setDraft({ ...draft, x2: p.x, y2: p.y })
+    if (draft.kind === 'brush' || draft.kind === 'highlighter') setDraft({ ...draft, points: [...draft.points, p] })
+    else if (draft.kind === 'arrow' || draft.kind === 'line') setDraft({ ...draft, x2: p.x, y2: p.y })
     else if (draft.kind === 'rect' || draft.kind === 'circle') {
       setDraft(shapeFromDrag(draft, current.start, p))
     } else if (draft.kind === 'mosaic') {
@@ -1825,6 +2043,14 @@ function AnnotationEditor({ capture, onCancel, onDone }: { capture: ScreenshotCa
       if (redoStack.length) redo()
       return
     }
+    if (selectedIds.length && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+      e.preventDefault()
+      const step = e.shiftKey ? 10 : 1
+      const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0
+      const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0
+      applyAnnotationChange((prev) => moveAnnotations(prev, selectedIds, dx, dy, capture.width, capture.height))
+      return
+    }
     if (e.key === 'Delete' || e.key === 'Backspace') {
       if (selectedIds.length) {
         e.preventDefault()
@@ -1953,7 +2179,7 @@ function AnnotationEditor({ capture, onCancel, onDone }: { capture: ScreenshotCa
             {item.label}
           </button>
         ))}
-        {tool !== 'mosaic' && tool !== 'select' && tool !== 'pan' && (
+        {tool !== 'mosaic' && tool !== 'select' && tool !== 'eraser' && tool !== 'pan' && (
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7, minHeight: 34, color: 'var(--text2)', fontSize: 12, whiteSpace: 'nowrap' }}>
             <span>颜色</span>
             <input value={color} onChange={(e) => setColor(e.target.value)} type="color" style={{ width: 34, height: 34, border: '1px solid var(--hair)', borderRadius: 8, background: 'var(--pill)', flex: '0 0 auto' }} />
@@ -1972,11 +2198,13 @@ function AnnotationEditor({ capture, onCancel, onDone }: { capture: ScreenshotCa
         <Chip>{statusText}</Chip>
       </div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', minWidth: 0 }}>
-        {tool === 'text' ? (
+        {tool === 'text' || tool === 'number' ? (
           <RangeControl label="字号" min={14} max={64} value={fontSize} onChange={setFontSize} />
+        ) : tool === 'highlighter' ? (
+          <RangeControl label="荧光笔宽度" min={8} max={64} value={highlighterWidth} onChange={setHighlighterWidth} />
         ) : tool === 'mosaic' ? (
           <RangeControl label="马赛克笔刷" min={12} max={72} value={mosaicSize} onChange={setMosaicSize} />
-        ) : tool !== 'select' && tool !== 'pan' ? (
+        ) : tool !== 'select' && tool !== 'eraser' && tool !== 'pan' ? (
           <RangeControl label="线宽" min={2} max={16} value={lineWidth} onChange={setLineWidth} />
         ) : null}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginLeft: 'auto', minWidth: 0 }}>

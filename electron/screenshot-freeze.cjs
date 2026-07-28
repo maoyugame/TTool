@@ -1,3 +1,11 @@
+const {
+  CLAMP_EDGE,
+  PIXEL_ROUND_COVER,
+  createCaptureFrame,
+  createCoordinateTransform,
+  matchDisplaySource,
+} = require('./screenshot-capture-core.cjs')
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value))
 }
@@ -64,14 +72,23 @@ async function captureDisplayFrame(desktopCapturer, display) {
   const width = Math.max(1, Math.round(display.bounds.width * (display.scaleFactor || 1)))
   const height = Math.max(1, Math.round(display.bounds.height * (display.scaleFactor || 1)))
   const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width, height } })
-  const source = sources.find((item) => String(item.display_id) === String(display.id)) || sources[0]
-  if (!source || source.thumbnail.isEmpty()) throw new Error('截图失败，请重试')
-  return {
-    image: source.thumbnail,
+  const source = matchDisplaySource(sources, display)
+  if (!source.thumbnail || typeof source.thumbnail.isEmpty !== 'function' || source.thumbnail.isEmpty()) {
+    const error = new Error(`显示器 ${display.id} 的截图源画面为空`)
+    error.code = 'ERR_CAPTURE_IMAGE_EMPTY'
+    throw error
   }
+  return createCaptureFrame({ display, source })
 }
 
 async function captureFrozenDisplays(desktopCapturer, displays) {
+  if (!Array.isArray(displays)) throw new TypeError('displays must be an array')
+  const displayIds = displays.map((display) => String(display && display.id))
+  if (new Set(displayIds).size !== displayIds.length) {
+    const error = new Error('显示器列表包含重复 id')
+    error.code = 'ERR_CAPTURE_DISPLAY_DUPLICATE'
+    throw error
+  }
   const entries = await Promise.all(displays.map(async (display) => [
     String(display.id),
     await captureDisplayFrame(desktopCapturer, display),
@@ -79,19 +96,43 @@ async function captureFrozenDisplays(desktopCapturer, displays) {
   return new Map(entries)
 }
 
-function cropFrozenDisplayRegion(frame, display, rect, viewport) {
+function cropFrozenDisplayRegion(frame, display, rect, viewport, renderedImageRect) {
   if (!frame || !frame.image || frame.image.isEmpty()) throw new Error('截图已失效，请重试')
-  const size = frame.image.getSize()
+  if (frame.displayId !== undefined && String(frame.displayId) !== String(display && display.id)) {
+    const error = new Error(`CaptureFrame ${frame.displayId} 不属于显示器 ${display && display.id}`)
+    error.code = 'ERR_CAPTURE_FRAME_DISPLAY_MISMATCH'
+    throw error
+  }
+  const size = frame.pixelSize || frame.image.getSize()
   const resolvedViewport = normalizeOverlayViewport(display, viewport)
-  const crop = mapOverlayRectToSize(rect, resolvedViewport, size)
-  const cropped = frame.image.crop(crop)
+  const transform = createCoordinateTransform({
+    screenDipRect: display && display.bounds,
+    overlayViewport: { x: 0, y: 0, width: resolvedViewport.width, height: resolvedViewport.height },
+    renderedImageRect: renderedImageRect || { x: 0, y: 0, width: resolvedViewport.width, height: resolvedViewport.height },
+    framePixelSize: size,
+    rotation: frame.rotation || 0,
+  })
+  const crop = transform.overlayCssRectToFramePixels(rect, {
+    clamp: CLAMP_EDGE,
+    rounding: PIXEL_ROUND_COVER,
+  })
+  if (crop.width <= 0 || crop.height <= 0) {
+    const error = new RangeError('截图选区未覆盖 CaptureFrame 像素')
+    error.code = 'ERR_CAPTURE_CROP_EMPTY'
+    throw error
+  }
+  const cropped = typeof frame.crop === 'function' ? frame.crop(crop) : frame.image.crop(crop)
   const croppedSize = cropped.getSize()
   return { imageDataUrl: cropped.toDataURL(), width: croppedSize.width, height: croppedSize.height }
 }
 
 module.exports = {
+  captureDisplayFrame,
   captureFrozenDisplays,
   cropFrozenDisplayRegion,
+  createCaptureFrame,
+  createCoordinateTransform,
   mapOverlayRectToSize,
+  matchDisplaySource,
   resolveOverlaySelection,
 }

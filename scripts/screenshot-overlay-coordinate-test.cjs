@@ -34,6 +34,14 @@ function mapRectBetweenSizes(rect, source, target) {
   return { x: left, y: top, width: right - left, height: bottom - top }
 }
 
+function coverRectBetweenSizes(rect, source, target) {
+  const left = Math.floor(rect.x * target.width / source.width)
+  const top = Math.floor(rect.y * target.height / source.height)
+  const right = Math.ceil((rect.x + rect.width) * target.width / source.width)
+  const bottom = Math.ceil((rect.y + rect.height) * target.height / source.height)
+  return { x: left, y: top, width: right - left, height: bottom - top }
+}
+
 async function runParent() {
   const { spawn } = require('node:child_process')
   const electron = require('electron')
@@ -77,7 +85,7 @@ async function runParent() {
     assert.equal(result.viewport.width, 1024)
     assert.ok(result.viewport.height >= 575 && result.viewport.height <= 578, `Unexpected hidden overlay height ${result.viewport.height}`)
     assert.deepEqual(result.selection, { x: 256, y: 144, width: 512, height: 288 })
-    const expectedCrop = mapRectBetweenSizes(result.selection, result.viewport, { width: 1920, height: 1080 })
+    const expectedCrop = coverRectBetweenSizes(result.selection, result.viewport, { width: 1920, height: 1080 })
     const expectedDisplayRect = mapRectBetweenSizes(result.selection, result.viewport, { width: 1280, height: 720 })
     const legacyCrop = mapRectBetweenSizes(result.selection, { width: 1280, height: 720 }, { width: 1920, height: 1080 })
     assert.deepEqual(result.cropRect, expectedCrop)

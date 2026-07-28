@@ -9,8 +9,11 @@ const { setupPlugins } = require('./plugins.cjs')
 const { setupHost } = require('./host/index.cjs')
 const { setupUpdater } = require('./updater.cjs')
 const { searchFiles, searchDeep } = require('./filesearch.cjs')
-const { captureFrozenDisplays, cropFrozenDisplayRegion, resolveOverlaySelection } = require('./screenshot-freeze.cjs')
+const { captureFrozenDisplays, createCoordinateTransform, cropFrozenDisplayRegion, resolveOverlaySelection } = require('./screenshot-freeze.cjs')
 const { loadOverlayWithFrame, overlayFrameReceiverScript } = require('./screenshot-overlay-frame.cjs')
+const { buildScreenshotOverlayPage } = require('./screenshot-overlay-page.cjs')
+const { createScreenshotHistory } = require('./screenshot-history.cjs')
+const { normalizePinState, transitionPinState } = require('./screenshot-pin-state.cjs')
 const { createCodexUsageService } = require('./codex-usage.cjs')
 const { DEFAULT_CODEX_USAGE_CONFIG, normalizeWidgetOpacity, readCodexUsageConfigFile, writeCodexUsageConfigFile } = require('./codex-usage-config.cjs')
 
@@ -328,13 +331,34 @@ let registeredScreenshotAccelerators = new Set()
 let activeCapture = null
 let captureSeq = 0
 let pinSeq = 0
-let recentSeq = 0
 let toastSeq = 0
 const pendingCaptures = []
-const recentScreenshots = []
 const pins = new Map()
 let captureToast = null
-const RECENT_SCREENSHOT_LIMIT = 5
+let screenshotHistory = null
+const screenshotHistoryPreviewCache = new Map()
+let cachedBuildInfo = null
+
+function screenshotBuildInfo() {
+  if (cachedBuildInfo) return cachedBuildInfo
+  let file = null
+  try {
+    file = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'dist', 'build-info.json'), 'utf8'))
+  } catch {
+    file = null
+  }
+  const revision = String((file && (file.shortRevision || file.revision)) || process.env.TTOOL_BUILD_SHA || process.env.GITHUB_SHA || 'dev')
+  cachedBuildInfo = {
+    appVersion: app.getVersion(),
+    revision: revision.slice(0, 12),
+    dirty: Boolean(file && file.dirty),
+    builtAt: file && file.builtAt ? String(file.builtAt) : null,
+    electronVersion: process.versions.electron,
+    chromeVersion: process.versions.chrome,
+    captureCoreVersion: 2,
+  }
+  return cachedBuildInfo
+}
 
 function screenshotConfigFile() {
   return path.join(app.getPath('userData'), 'screenshot-pin-config.json')
@@ -497,6 +521,7 @@ function displayInfo(d) {
     bounds: { x: d.bounds.x, y: d.bounds.y, width: d.bounds.width, height: d.bounds.height },
     workArea: { x: d.workArea.x, y: d.workArea.y, width: d.workArea.width, height: d.workArea.height },
     scaleFactor: d.scaleFactor || 1,
+    rotation: Number(d.rotation) || 0,
     primary: d.id === primaryId,
   }
 }
@@ -516,6 +541,7 @@ function screenshotEnvironment() {
     platform: process.platform,
     permission: screenPermissionStatus(),
     displays: screen.getAllDisplays().map(displayInfo),
+    build: screenshotBuildInfo(),
   }
 }
 
@@ -1413,6 +1439,7 @@ function createOverlayWindow(captureId, display, action, frozenFrame) {
     y: display.bounds.y,
     width: display.bounds.width,
     height: display.bounds.height,
+    useContentSize: true,
     frame: false,
     transparent: true,
     backgroundColor: '#00000000',
@@ -1443,8 +1470,8 @@ function createOverlayWindow(captureId, display, action, frozenFrame) {
     return handleOverlayBridgeNavigation(null, url) ? { action: 'deny' } : { action: 'deny' }
   })
   overlay.setAlwaysOnTop(true, 'screen-saver')
-  const png = frozenFrame.image.toPNG()
-  const { ready } = loadOverlayWithFrame(overlay, overlayHtml(captureId, display, action), {
+  const png = frozenFrame.toPNG()
+  const { ready } = loadOverlayWithFrame(overlay, buildScreenshotOverlayPage(captureId, display, action), {
     captureId,
     displayId: display.id,
     png,
@@ -1910,14 +1937,71 @@ function createCaptureToast(capture, options = {}) {
   return { ok: true, id }
 }
 
+function screenshotHistoryStore() {
+  if (!screenshotHistory) {
+    screenshotHistory = createScreenshotHistory(path.join(app.getPath('userData'), 'screenshot-history'))
+  }
+  return screenshotHistory
+}
+
+function imagePreviewDataUrl(image, maxWidth = 360, maxHeight = 240) {
+  const size = image.getSize()
+  const scale = Math.min(1, maxWidth / Math.max(1, size.width), maxHeight / Math.max(1, size.height))
+  if (scale >= 1) return image.toDataURL()
+  return image.resize({ width: Math.max(1, Math.round(size.width * scale)), height: Math.max(1, Math.round(size.height * scale)), quality: 'good' }).toDataURL()
+}
+
+function screenshotHistoryItemWithImage(item, includeDeleted = true, preview = true) {
+  if (!item) return null
+  const png = screenshotHistoryStore().readPng(item.id, { includeDeleted })
+  if (!png) return null
+  const image = nativeImage.createFromBuffer(png)
+  if (!image || image.isEmpty()) return null
+  let imageDataUrl
+  if (preview) {
+    imageDataUrl = screenshotHistoryPreviewCache.get(item.id)
+    if (!imageDataUrl) {
+      imageDataUrl = imagePreviewDataUrl(image)
+      screenshotHistoryPreviewCache.set(item.id, imageDataUrl)
+    }
+  } else {
+    imageDataUrl = 'data:image/png;base64,' + png.toString('base64')
+  }
+  return { ...item, imageDataUrl }
+}
+
+function screenshotHistoryList(options = {}) {
+  const includeDeleted = options.includeDeleted !== false
+  const favoritesOnly = Boolean(options.favoritesOnly)
+  const limit = clamp(Math.round(Number(options.limit) || 100), 1, 100)
+  const storedItems = screenshotHistoryStore().list({ includeDeleted, favoritesOnly, limit })
+  const listedIds = new Set(storedItems.map((item) => item.id))
+  if (screenshotHistoryPreviewCache.size > 120) {
+    for (const id of screenshotHistoryPreviewCache.keys()) {
+      if (!listedIds.has(id)) screenshotHistoryPreviewCache.delete(id)
+    }
+  }
+  return storedItems.map((item) => screenshotHistoryItemWithImage(item, includeDeleted)).filter(Boolean)
+}
+
+function getScreenshotHistoryItem(id, includeDeleted = false) {
+  try {
+    const item = screenshotHistoryStore().get(String(id || ''), { includeDeleted: Boolean(includeDeleted) })
+    if (!item) return { ok: false, error: '截图历史不存在' }
+    return { ok: true, item: screenshotHistoryItemWithImage(item, Boolean(includeDeleted), false) }
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : '读取截图历史失败' }
+  }
+}
+
 function recentScreenshotList() {
-  return recentScreenshots.map((item) => ({ ...item }))
+  return screenshotHistoryList({ includeDeleted: false, limit: 30 })
 }
 
 function emitRecentScreenshotsChanged() {
   if (!win || win.isDestroyed()) return
   const send = () => {
-    if (win && !win.isDestroyed()) win.webContents.send('screenshot:recents-changed', recentScreenshotList())
+    if (win && !win.isDestroyed()) win.webContents.send('screenshot:recents-changed', screenshotHistoryList({ includeDeleted: true }))
   }
   if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send)
   else send()
@@ -1927,30 +2011,61 @@ function rememberScreenshot(dataUrl, options = {}) {
   try {
     const img = dataUrlImage(dataUrl)
     const size = img.getSize()
-    const item = {
-      id: 'recent_' + Date.now().toString(36) + '_' + (++recentSeq).toString(36),
-      imageDataUrl: String(dataUrl || ''),
-      createdAt: Date.now(),
+    const stored = screenshotHistoryStore().addPng(img.toPNG(), {
       width: size.width,
       height: size.height,
       displayId: options && options.displayId !== undefined ? Number(options.displayId) : undefined,
-    }
-    recentScreenshots.unshift(item)
-    while (recentScreenshots.length > RECENT_SCREENSHOT_LIMIT) recentScreenshots.pop()
+      source: options && options.source ? String(options.source) : 'screenshot',
+    })
+    const item = screenshotHistoryItemWithImage(stored)
     emitRecentScreenshotsChanged()
-    return { ok: true, item: { ...item } }
+    return { ok: true, item }
   } catch (e) {
     return { ok: false, error: e && e.message ? e.message : '图片数据无效' }
   }
 }
 
 function deleteRecentScreenshot(id) {
-  const index = recentScreenshots.findIndex((item) => item.id === String(id || ''))
-  if (index >= 0) {
-    recentScreenshots.splice(index, 1)
+  try {
+    const item = screenshotHistoryStore().delete(String(id || ''))
     emitRecentScreenshotsChanged()
+    return { ok: true, item: screenshotHistoryItemWithImage(item, true) }
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : '删除截图失败' }
   }
-  return { ok: true }
+}
+
+function setScreenshotFavorite(id, favorite) {
+  try {
+    const item = screenshotHistoryStore().setFavorite(String(id || ''), Boolean(favorite))
+    if (!item) return { ok: false, error: '截图历史不存在' }
+    emitRecentScreenshotsChanged()
+    return { ok: true, item: screenshotHistoryItemWithImage(item, true) }
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : '收藏截图失败' }
+  }
+}
+
+function restoreScreenshot(id) {
+  try {
+    const item = screenshotHistoryStore().restore(String(id || ''))
+    if (!item) return { ok: false, error: '截图历史不存在' }
+    emitRecentScreenshotsChanged()
+    return { ok: true, item: screenshotHistoryItemWithImage(item, true) }
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : '恢复截图失败' }
+  }
+}
+
+function quickSaveScreenshot(id) {
+  try {
+    const destination = path.join(app.getPath('pictures'), 'TTool Screenshots')
+    const saved = screenshotHistoryStore().quickSave(String(id || ''), destination)
+    if (!saved) return { ok: false, error: '截图历史不存在' }
+    return { ok: true, path: saved.path }
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : '快速保存截图失败' }
+  }
 }
 
 function normalizeOverlayAction(requested, defaultAction) {
@@ -1958,13 +2073,77 @@ function normalizeOverlayAction(requested, defaultAction) {
   return defaultAction === 'pin' ? 'pin' : 'edit'
 }
 
+function validateOverlaySelectionContract(payload, display, frozenFrame) {
+  if (!frozenFrame) throw new Error('截图帧已失效，请重试')
+  if (payload.coordinateSpace !== 'overlay-css-px-v1') throw new Error('截图坐标协议已失效，请重试')
+  const viewport = payload && payload.viewport
+  const rendered = payload && payload.renderedImageRect
+  const frameSize = payload && payload.frameSize
+  const viewportWidth = Number(viewport && viewport.width)
+  const viewportHeight = Number(viewport && viewport.height)
+  const renderedX = Number(rendered && rendered.x)
+  const renderedY = Number(rendered && rendered.y)
+  const renderedWidth = Number(rendered && rendered.width)
+  const renderedHeight = Number(rendered && rendered.height)
+  const expectedFrameSize = frozenFrame.pixelSize || frozenFrame.image.getSize()
+  const finite = (value) => Number.isFinite(value)
+  if (![viewportWidth, viewportHeight, renderedX, renderedY, renderedWidth, renderedHeight].every(finite)
+    || viewportWidth <= 0 || viewportHeight <= 0 || renderedWidth <= 0 || renderedHeight <= 0) {
+    throw new Error('截图坐标数据无效，请重试')
+  }
+  if (Math.abs(viewportWidth - display.bounds.width) > 2 || Math.abs(viewportHeight - display.bounds.height) > 2) {
+    throw new Error('截图窗口尺寸发生变化，请重试')
+  }
+  if (renderedX < -1 || renderedY < -1
+    || renderedX + renderedWidth > viewportWidth + 1
+    || renderedY + renderedHeight > viewportHeight + 1) {
+    throw new Error('截图图像边界无效，请重试')
+  }
+  if (Number(frameSize && frameSize.width) !== expectedFrameSize.width
+    || Number(frameSize && frameSize.height) !== expectedFrameSize.height) {
+    throw new Error('截图帧尺寸发生变化，请重试')
+  }
+  return {
+    viewport: { width: viewportWidth, height: viewportHeight },
+    renderedImageRect: { x: renderedX, y: renderedY, width: renderedWidth, height: renderedHeight },
+  }
+}
+
+function displayLocalRectForSelection(display, frozenFrame, rect, viewport, renderedImageRect) {
+  const transform = createCoordinateTransform({
+    frame: frozenFrame,
+    screenDipRect: display.bounds,
+    overlayViewport: { x: 0, y: 0, width: viewport.width, height: viewport.height },
+    renderedImageRect,
+  })
+  const frameRect = transform.overlayCssRectToFramePixels(rect, { clamp: 'edge', rounding: 'cover' })
+  const screenRect = transform.framePixelsRectToScreenDip(frameRect, { clamp: 'edge' })
+  return {
+    x: screenRect.x - display.bounds.x,
+    y: screenRect.y - display.bounds.y,
+    width: screenRect.width,
+    height: screenRect.height,
+  }
+}
+
 async function completeOverlaySelection(payload) {
   if (!activeCapture || payload.captureId !== activeCapture.id) return { ok: false, error: '截图已取消' }
   const capture = activeCapture
   const display = capture.displays.find((d) => d.id === Number(payload.displayId))
   if (!display) return { ok: false, error: '未检测到可用显示器' }
-  const selection = resolveOverlaySelection(display, payload.rect, payload.viewport)
-  const { rect, viewport, displayRect } = selection
+  const frozenFrame = capture.frozenFrames.get(String(display.id))
+  let contract
+  try {
+    contract = validateOverlaySelectionContract(payload, display, frozenFrame)
+  } catch (error) {
+    closeActiveOverlayWindows()
+    activeCapture = null
+    const message = error && error.message ? error.message : '截图坐标数据无效，请重试'
+    emitScreenshotStatus('error', message)
+    return { ok: false, error: message }
+  }
+  const selection = resolveOverlaySelection(display, payload.rect, contract.viewport)
+  const { rect, viewport } = selection
   if (rect.width < 8 || rect.height < 8) {
     closeActiveOverlayWindows()
     activeCapture = null
@@ -1973,11 +2152,11 @@ async function completeOverlaySelection(payload) {
   }
   const action = normalizeOverlayAction(payload.action, capture.action)
   const annotations = normalizeOverlayAnnotations(payload.annotations, rect)
-  const frozenFrame = capture.frozenFrames.get(String(display.id))
+  const displayRect = displayLocalRectForSelection(display, frozenFrame, rect, viewport, contract.renderedImageRect)
   closeActiveOverlayWindows()
   activeCapture = null
   try {
-    let shot = cropFrozenDisplayRegion(frozenFrame, display, rect, viewport)
+    let shot = cropFrozenDisplayRegion(frozenFrame, display, rect, viewport, contract.renderedImageRect)
     shot = await renderAnnotatedCapture(shot, annotations, rect)
     rememberScreenshot(shot.imageDataUrl, { displayId: display.id })
     if (action === 'pin') {
@@ -2020,16 +2199,159 @@ function dataUrlImage(dataUrl) {
   return img
 }
 
-function pinInfo(pin) {
+const PERSISTED_PIN_LIMIT = 20
+const MAX_PIN_IMAGE_BYTES = 32 * 1024 * 1024
+const MAX_PIN_TOTAL_BYTES = 256 * 1024 * 1024
+let pinPersistenceTimer = null
+
+function safePinId(value) {
+  const id = String(value || '')
+  return /^pin_[A-Za-z0-9_-]{1,100}$/.test(id) ? id : null
+}
+
+function pinStoreDirectory() {
+  return path.join(app.getPath('userData'), 'screenshot-pins')
+}
+
+function pinManifestFile() {
+  return path.join(pinStoreDirectory(), 'pins.json')
+}
+
+function pinImageFile(id) {
+  const safeId = safePinId(id)
+  if (!safeId) throw new Error('贴图 id 非法')
+  return path.join(pinStoreDirectory(), safeId + '.png')
+}
+
+function atomicWritePinFile(target, data) {
+  fs.mkdirSync(pinStoreDirectory(), { recursive: true })
+  const temporary = path.join(pinStoreDirectory(), '.' + path.basename(target) + '.' + process.pid + '.tmp')
+  try {
+    fs.writeFileSync(temporary, data, { flag: 'w', mode: 0o600 })
+    fs.renameSync(temporary, target)
+  } catch (error) {
+    try { fs.unlinkSync(temporary) } catch { /* ignore */ }
+    throw error
+  }
+}
+
+function normalizedPersistedBounds(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  const bounds = {
+    x: Math.round(Number(raw.x)),
+    y: Math.round(Number(raw.y)),
+    width: Math.round(Number(raw.width)),
+    height: Math.round(Number(raw.height)),
+  }
+  if (!Object.values(bounds).every(Number.isFinite) || bounds.width < 120 || bounds.height < 90 || bounds.width > 10000 || bounds.height > 10000) return null
+  return bounds
+}
+
+function constrainPinBoundsToDisplays(bounds, displayId) {
+  const displays = screen.getAllDisplays()
+  if (!displays.length) return bounds
+  const center = { x: Math.round(bounds.x + bounds.width / 2), y: Math.round(bounds.y + bounds.height / 2) }
+  const display = displays.find((item) => item.id === Number(displayId)) || screen.getDisplayNearestPoint(center) || screen.getPrimaryDisplay()
+  const workArea = display.workArea
+  const width = clamp(bounds.width, 120, Math.max(120, workArea.width - 16))
+  const height = clamp(bounds.height, 90, Math.max(90, workArea.height - 16))
+  return {
+    x: clamp(Math.round(bounds.x), workArea.x + 8, workArea.x + workArea.width - width - 8),
+    y: clamp(Math.round(bounds.y), workArea.y + 8, workArea.y + workArea.height - height - 8),
+    width: Math.round(width),
+    height: Math.round(height),
+  }
+}
+
+function persistedPinRecord(pin) {
+  let bounds = pin.bounds
+  try {
+    if (pin.window && !pin.window.isDestroyed()) bounds = pin.window.getBounds()
+  } catch {
+    /* keep last known bounds */
+  }
   return {
     id: pin.id,
-    imageDataUrl: pin.imageDataUrl,
     createdAt: pin.createdAt,
     width: pin.width,
     height: pin.height,
-    visible: pin.visible,
+    byteLength: pin.byteLength,
     displayId: pin.displayId,
-    opacity: pin.opacity,
+    bounds,
+    normalBounds: pin.normalBounds || null,
+    state: normalizePinState(pin.state),
+  }
+}
+
+function persistPinManifestNow() {
+  if (pinPersistenceTimer) clearTimeout(pinPersistenceTimer)
+  pinPersistenceTimer = null
+  const records = [...pins.values()]
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .slice(0, PERSISTED_PIN_LIMIT)
+    .map(persistedPinRecord)
+  atomicWritePinFile(pinManifestFile(), JSON.stringify({ schemaVersion: 1, updatedAt: Date.now(), pins: records }, null, 2) + '\n')
+}
+
+function schedulePinPersistence() {
+  if (isQuitting) return
+  if (pinPersistenceTimer) clearTimeout(pinPersistenceTimer)
+  pinPersistenceTimer = setTimeout(() => {
+    try { persistPinManifestNow() } catch (error) { console.warn('[ttool] 贴图状态保存失败：', error && error.message ? error.message : error) }
+  }, 250)
+  if (pinPersistenceTimer && typeof pinPersistenceTimer.unref === 'function') pinPersistenceTimer.unref()
+}
+
+function readPersistedPinRecords() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(pinManifestFile(), 'utf8'))
+    if (!parsed || parsed.schemaVersion !== 1 || !Array.isArray(parsed.pins)) return []
+    const records = []
+    let totalBytes = 0
+    for (const raw of parsed.pins.slice(0, PERSISTED_PIN_LIMIT)) {
+      try {
+        const id = safePinId(raw && raw.id)
+        const bounds = normalizedPersistedBounds(raw && raw.bounds)
+        if (!id || !bounds) continue
+        const imageFile = pinImageFile(id)
+        const stat = fs.lstatSync(imageFile)
+        if (!stat.isFile() || stat.isSymbolicLink() || stat.size <= 0 || stat.size > MAX_PIN_IMAGE_BYTES || totalBytes + stat.size > MAX_PIN_TOTAL_BYTES) continue
+        const png = fs.readFileSync(imageFile)
+        const image = nativeImage.createFromBuffer(png)
+        if (!image || image.isEmpty()) continue
+        totalBytes += stat.size
+        records.push({
+          id,
+          createdAt: Number.isFinite(Number(raw.createdAt)) ? Number(raw.createdAt) : Date.now(),
+          displayId: Number.isFinite(Number(raw.displayId)) ? Number(raw.displayId) : undefined,
+          bounds,
+          normalBounds: normalizedPersistedBounds(raw.normalBounds),
+          state: normalizePinState(raw.state),
+          png,
+        })
+      } catch {
+        /* one stale pin must not prevent the remaining safe records from restoring */
+      }
+    }
+    return records
+  } catch {
+    return []
+  }
+}
+
+function pinInfo(pin) {
+  const state = normalizePinState(pin.state)
+  return {
+    id: pin.id,
+    imageDataUrl: pin.previewDataUrl || pin.imageDataUrl,
+    createdAt: pin.createdAt,
+    width: pin.width,
+    height: pin.height,
+    visible: !state.hidden,
+    displayId: pin.displayId,
+    byteLength: pin.byteLength,
+    bounds: pin.bounds ? { ...pin.bounds } : undefined,
+    ...state,
   }
 }
 
@@ -2073,7 +2395,9 @@ function pinBounds(width, height, options = {}) {
 
 function pinHtml(pin) {
   const id = JSON.stringify(pin.id)
-  const image = JSON.stringify(pin.imageDataUrl)
+  const meta = JSON.stringify({ captureId: pin.id, displayId: Number(pin.displayId) || 0 })
+  const initialState = JSON.stringify(normalizePinState(pin.state))
+  const frameReceiver = overlayFrameReceiverScript()
   return `<!doctype html>
 <html>
 <head>
@@ -2082,41 +2406,139 @@ function pinHtml(pin) {
 html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; font-family: system-ui,-apple-system,Segoe UI,sans-serif; }
 body { border-radius: 10px; }
 .frame { position: fixed; inset: 0; overflow: hidden; border-radius: 10px; border: 1px solid rgba(255,255,255,.24); background: rgba(20,22,28,.18); box-shadow: 0 14px 44px rgba(0,0,0,.32); -webkit-app-region: drag; }
-img { width: 100%; height: 100%; object-fit: contain; display: block; }
-.toolbar { position: absolute; right: 8px; top: 8px; display: flex; gap: 5px; padding: 5px; border-radius: 9px; background: rgba(15,18,24,.78); opacity: 0; transition: opacity .14s ease; -webkit-app-region: no-drag; }
+.frame.locked { -webkit-app-region: no-drag; }
+.stage { position: absolute; inset: 0; display: grid; place-items: center; overflow: hidden; pointer-events: none; }
+img { width: 100%; height: 100%; object-fit: contain; display: block; transform-origin: center; }
+body.quarter img { width: 100vh; height: 100vw; }
+.toolbar { position: absolute; right: 8px; top: 8px; max-width: calc(100% - 16px); display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; padding: 5px; border-radius: 9px; background: rgba(15,18,24,.82); opacity: 0; transition: opacity .14s ease; -webkit-app-region: no-drag; }
 .frame:hover .toolbar, .toolbar:focus-within, body.showbar .toolbar { opacity: 1; }
 button { height: 28px; border: 0; border-radius: 7px; padding: 0 8px; color: #fff; background: rgba(255,255,255,.16); font-size: 12px; cursor: pointer; }
+button.active { background: rgba(53,213,199,.34); color: #eafffd; }
 .hl { box-shadow: 0 0 0 3px #35d5c7 inset, 0 0 28px rgba(53,213,199,.55) inset; }
 </style>
 </head>
 <body>
 <div class="frame" id="frame">
-  <img id="img" draggable="false" />
+  <div class="stage"><img id="frozenFrame" draggable="false" /></div>
   <div class="toolbar">
-    <button id="annotate">标注</button><button id="copy">复制</button><button id="save">保存</button><button id="hide">隐藏</button><button id="close">关闭</button>
+    <button id="annotate">标注</button><button id="copy">复制</button><button id="save">保存</button>
+    <button id="rotate">旋转</button><button id="flipX">水平翻转</button><button id="lock">锁定</button><button id="pass">穿透</button><button id="thumb">缩略</button>
+    <button id="hide">隐藏</button><button id="close">关闭</button>
   </div>
 </div>
 <script>
+const META = ${meta};
+${frameReceiver}
 const PIN_ID = ${id};
-let imageDataUrl = ${image};
-const img = document.getElementById('img');
-img.src = imageDataUrl;
+let pinState = ${initialState};
+function api() { return window.ttool && window.ttool.screenshot; }
+function update(action) { const bridge = api(); if (bridge && bridge.updatePinState) bridge.updatePinState(PIN_ID, action); }
+function applyState(next) {
+  pinState = next || pinState;
+  const transform = 'rotate(' + pinState.rotation + 'deg) scaleX(' + (pinState.flipX ? -1 : 1) + ') scaleY(' + (pinState.flipY ? -1 : 1) + ')';
+  frozenFrame.style.transform = transform;
+  document.body.classList.toggle('quarter', Math.round(pinState.rotation / 90) % 2 === 1);
+  document.getElementById('frame').classList.toggle('locked', Boolean(pinState.locked));
+  document.getElementById('lock').classList.toggle('active', Boolean(pinState.locked));
+  document.getElementById('pass').classList.toggle('active', Boolean(pinState.clickThrough));
+  document.getElementById('thumb').classList.toggle('active', Boolean(pinState.thumbnail));
+}
+window.__setPinState = applyState;
+applyState(pinState);
 document.getElementById('annotate').onclick = () => window.ttool.screenshot.annotatePin(PIN_ID);
-document.getElementById('copy').onclick = () => window.ttool.screenshot.copyImage(imageDataUrl);
-document.getElementById('save').onclick = () => window.ttool.screenshot.saveImage(imageDataUrl, 'ttool-pin.png');
+document.getElementById('copy').onclick = () => window.ttool.screenshot.copyPin(PIN_ID);
+document.getElementById('save').onclick = () => window.ttool.screenshot.savePin(PIN_ID);
+document.getElementById('rotate').onclick = () => update({ type: 'rotateBy', degrees: 90 });
+document.getElementById('flipX').onclick = () => update({ type: 'toggleFlipX' });
+document.getElementById('lock').onclick = () => update({ type: 'toggleLock' });
+document.getElementById('pass').onclick = () => update({ type: 'toggleClickThrough' });
+document.getElementById('thumb').onclick = () => update({ type: 'toggleThumbnail' });
 document.getElementById('hide').onclick = () => window.ttool.screenshot.setPinVisible(PIN_ID, false);
 document.getElementById('close').onclick = () => window.ttool.screenshot.closePin(PIN_ID);
-window.__setPinImage = (next) => { imageDataUrl = next; img.src = next; };
 window.__highlightPin = () => {
   document.getElementById('frame').classList.add('hl');
   setTimeout(() => document.getElementById('frame').classList.remove('hl'), 900);
 };
+window.addEventListener('wheel', (event) => {
+  event.preventDefault();
+  const direction = event.deltaY < 0 ? 1 : -1;
+  update(event.ctrlKey
+    ? { type: 'opacityBy', delta: direction * 0.05 }
+    : { type: 'zoomBy', delta: direction * 0.1 });
+}, { passive: false });
+window.addEventListener('dblclick', () => update({ type: 'toggleThumbnail' }));
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') window.ttool.screenshot.setPinVisible(PIN_ID, false);
 });
 </script>
 </body>
 </html>`
+}
+
+function pinVisualAspect(pin, state = pin.state) {
+  const quarter = Math.round(normalizePinState(state).rotation / 90) % 2 === 1
+  return quarter ? pin.height / pin.width : pin.width / pin.height
+}
+
+function resizedAroundCenter(bounds, width, height) {
+  return {
+    x: Math.round(bounds.x + (bounds.width - width) / 2),
+    y: Math.round(bounds.y + (bounds.height - height) / 2),
+    width: Math.round(width),
+    height: Math.round(height),
+  }
+}
+
+function applyPinWindowState(pin, previousState = null) {
+  const pinWin = pin.window
+  if (!pinWin || pinWin.isDestroyed()) return
+  const state = normalizePinState(pin.state)
+  const previous = previousState ? normalizePinState(previousState) : null
+  pin.state = state
+  pin.applyingState = true
+  try {
+    if (previous && previous.thumbnail !== state.thumbnail) {
+      if (state.thumbnail) {
+        pin.normalBounds = pinWin.getBounds()
+        const aspect = Math.max(0.2, pinVisualAspect(pin, state))
+        const width = 220
+        const height = Math.max(90, Math.round(width / aspect))
+        pinWin.setBounds(resizedAroundCenter(pin.normalBounds, width, height), false)
+      } else if (pin.normalBounds) {
+        pinWin.setBounds(pin.normalBounds, false)
+      }
+    } else if (previous && !state.thumbnail && previous.zoom !== state.zoom) {
+      const current = pinWin.getBounds()
+      const ratio = state.zoom / Math.max(0.01, previous.zoom)
+      pinWin.setBounds(resizedAroundCenter(current, Math.max(180, current.width * ratio), Math.max(120, current.height * ratio)), false)
+    } else if (previous && !state.thumbnail && Math.round(previous.rotation / 90) % 2 !== Math.round(state.rotation / 90) % 2) {
+      const current = pinWin.getBounds()
+      pinWin.setBounds(resizedAroundCenter(current, current.height, current.width), false)
+    }
+    pinWin.setAspectRatio(Math.max(0.01, pinVisualAspect(pin, state)))
+    pinWin.setOpacity(state.opacity)
+    pinWin.setMovable(!state.locked)
+    pinWin.setResizable(!state.locked && !state.thumbnail)
+    pinWin.setIgnoreMouseEvents(state.clickThrough, state.clickThrough ? { forward: true } : undefined)
+    if (state.hidden) pinWin.hide()
+    else if (!pinWin.isVisible()) pinWin.showInactive()
+    pin.bounds = pinWin.getBounds()
+    pinWin.webContents.executeJavaScript(`window.__setPinState && window.__setPinState(${JSON.stringify(state)})`).catch(() => {})
+  } finally {
+    pin.applyingState = false
+  }
+}
+
+function loadPinContent(pin) {
+  const { ready } = loadOverlayWithFrame(pin.window, pinHtml(pin), {
+    captureId: pin.id,
+    displayId: Number(pin.displayId) || 0,
+    png: pin.png,
+  })
+  return ready.then(() => {
+    applyPinWindowState(pin)
+    return pin
+  })
 }
 
 function createPinWindow(dataUrl, options = {}) {
@@ -2126,19 +2548,42 @@ function createPinWindow(dataUrl, options = {}) {
   } catch (e) {
     return { ok: false, error: e && e.message ? e.message : '图片数据无效' }
   }
+  const png = options.png && Buffer.isBuffer(options.png) ? Buffer.from(options.png) : img.toPNG()
+  if (!png.length || png.length > MAX_PIN_IMAGE_BYTES) return { ok: false, error: '贴图超过单图容量上限' }
+  const existingBytes = [...pins.values()].reduce((sum, item) => sum + (item.byteLength || 0), 0)
+  if (!options.restoring && (pins.size >= PERSISTED_PIN_LIMIT || existingBytes + png.length > MAX_PIN_TOTAL_BYTES)) {
+    return { ok: false, error: '贴图数量或容量已达到上限' }
+  }
   const size = img.getSize()
-  const id = 'pin_' + Date.now().toString(36) + '_' + (++pinSeq).toString(36)
-  const bounds = pinBounds(size.width, size.height, options)
+  const id = options.restoring && safePinId(options.id)
+    ? options.id
+    : 'pin_' + Date.now().toString(36) + '_' + (++pinSeq).toString(36)
+  if (pins.has(id)) return { ok: false, error: '贴图已存在' }
+  const persistedBounds = normalizedPersistedBounds(options.bounds)
+  const bounds = persistedBounds ? constrainPinBoundsToDisplays(persistedBounds, options.displayId) : pinBounds(size.width, size.height, options)
+  let state = normalizePinState(options.state)
+  if (options.visible !== undefined) state = normalizePinState({ visible: options.visible }, state)
+  const imageDataUrl = 'data:image/png;base64,' + png.toString('base64')
   const pin = {
     id,
-    imageDataUrl: dataUrl,
-    createdAt: Date.now(),
+    imageDataUrl,
+    previewDataUrl: imagePreviewDataUrl(img),
+    png,
+    byteLength: png.length,
+    createdAt: Number.isFinite(Number(options.createdAt)) ? Number(options.createdAt) : Date.now(),
     width: size.width,
     height: size.height,
     displayId: options.displayId,
-    opacity: 1,
-    visible: true,
+    state,
+    bounds,
+    normalBounds: normalizedPersistedBounds(options.normalBounds) ? constrainPinBoundsToDisplays(normalizedPersistedBounds(options.normalBounds), options.displayId) : null,
+    applyingState: false,
     window: null,
+  }
+  try {
+    if (!options.restoring) atomicWritePinFile(pinImageFile(id), png)
+  } catch (error) {
+    return { ok: false, error: error && error.message ? error.message : '贴图持久化失败' }
   }
   const pinWin = new BrowserWindow({
     ...bounds,
@@ -2167,15 +2612,44 @@ function createPinWindow(dataUrl, options = {}) {
   pin.window = pinWin
   pins.set(id, pin)
   pinWin.setAlwaysOnTop(true, 'screen-saver')
-  pinWin.setAspectRatio(size.width / size.height)
-  pinWin.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(pinHtml(pin)))
-  pinWin.once('ready-to-show', () => pinWin.show())
+  hardenWebContents(pinWin.webContents)
+  pinWin.on('move', () => {
+    if (pin.applyingState || pinWin.isDestroyed()) return
+    pin.bounds = pinWin.getBounds()
+    if (!pin.state.thumbnail) pin.normalBounds = pin.bounds
+    schedulePinPersistence()
+  })
+  pinWin.on('resize', () => {
+    if (pin.applyingState || pinWin.isDestroyed()) return
+    pin.bounds = pinWin.getBounds()
+    if (!pin.state.thumbnail) pin.normalBounds = pin.bounds
+    schedulePinPersistence()
+  })
   pinWin.on('closed', () => {
     pins.delete(id)
-    broadcastPins()
+    if (!isQuitting) {
+      try { fs.unlinkSync(pinImageFile(id)) } catch { /* ignore */ }
+      schedulePinPersistence()
+      broadcastPins()
+    }
   })
+  void loadPinContent(pin).then(() => {
+    if (!pin.state.hidden && !pinWin.isDestroyed()) pinWin.showInactive()
+  }).catch((error) => {
+    console.warn('[ttool] 贴图画面加载失败：', error && error.message ? error.message : error)
+    if (!pinWin.isDestroyed()) pinWin.close()
+  })
+  schedulePinPersistence()
   broadcastPins()
   return { ok: true, pin: pinInfo(pin) }
+}
+
+function restorePersistedPins() {
+  for (const record of readPersistedPinRecords()) {
+    const image = nativeImage.createFromBuffer(record.png)
+    const result = createPinWindow(image.toDataURL(), { ...record, restoring: true })
+    if (!result.ok) console.warn('[ttool] 恢复贴图失败：', result.error)
+  }
 }
 
 function updatePinImage(id, dataUrl) {
@@ -2187,18 +2661,36 @@ function updatePinImage(id, dataUrl) {
   } catch (e) {
     return { ok: false, error: e && e.message ? e.message : '图片数据无效' }
   }
+  const png = img.toPNG()
+  if (!png.length || png.length > MAX_PIN_IMAGE_BYTES) return { ok: false, error: '贴图超过单图容量上限' }
+  const totalWithoutCurrent = [...pins.values()].reduce((sum, item) => sum + (item.id === pin.id ? 0 : (item.byteLength || 0)), 0)
+  if (totalWithoutCurrent + png.length > MAX_PIN_TOTAL_BYTES) return { ok: false, error: '贴图容量已达到上限' }
+  try {
+    atomicWritePinFile(pinImageFile(pin.id), png)
+  } catch (error) {
+    return { ok: false, error: error && error.message ? error.message : '贴图持久化失败' }
+  }
   const size = img.getSize()
-  pin.imageDataUrl = dataUrl
+  pin.png = png
+  pin.byteLength = png.length
+  pin.imageDataUrl = 'data:image/png;base64,' + png.toString('base64')
+  pin.previewDataUrl = imagePreviewDataUrl(img)
   pin.width = size.width
   pin.height = size.height
-  try {
-    if (!pin.window.isDestroyed()) {
-      pin.window.setAspectRatio(size.width / size.height)
-      pin.window.webContents.executeJavaScript(`window.__setPinImage(${JSON.stringify(dataUrl)})`).catch(() => {})
-    }
-  } catch {
-    /* ignore */
-  }
+  if (!pin.window.isDestroyed()) void loadPinContent(pin).catch(() => {})
+  schedulePinPersistence()
+  broadcastPins()
+  return { ok: true, pin: pinInfo(pin) }
+}
+
+function updatePinState(id, action) {
+  const pin = pins.get(String(id || ''))
+  if (!pin || pin.window.isDestroyed()) return { ok: false, error: '贴图不存在' }
+  const previous = normalizePinState(pin.state)
+  const next = transitionPinState(previous, action)
+  pin.state = next
+  applyPinWindowState(pin, previous)
+  schedulePinPersistence()
   broadcastPins()
   return { ok: true, pin: pinInfo(pin) }
 }
@@ -2206,27 +2698,27 @@ function updatePinImage(id, dataUrl) {
 function focusPin(id) {
   const pin = pins.get(String(id || ''))
   if (!pin || pin.window.isDestroyed()) return { ok: false, error: '贴图不存在' }
-  pin.visible = true
+  pin.state = transitionPinState(pin.state, { type: 'setVisible', value: true })
+  applyPinWindowState(pin)
   pin.window.show()
   pin.window.moveTop()
-  pin.window.focus()
+  if (!pin.state.clickThrough) pin.window.focus()
   pin.window.webContents.executeJavaScript('window.__highlightPin && window.__highlightPin()').catch(() => {})
+  schedulePinPersistence()
   broadcastPins()
-  return { ok: true }
+  return { ok: true, pin: pinInfo(pin) }
 }
 
 function setPinVisible(id, visible) {
   const pin = pins.get(String(id || ''))
   if (!pin || pin.window.isDestroyed()) return { ok: false, error: '贴图不存在' }
-  pin.visible = Boolean(visible)
-  if (pin.visible) {
-    pin.window.show()
-    pin.window.moveTop()
-  } else {
-    pin.window.hide()
-  }
+  const previous = normalizePinState(pin.state)
+  pin.state = transitionPinState(pin.state, { type: 'setVisible', value: Boolean(visible) })
+  applyPinWindowState(pin, previous)
+  if (!pin.state.hidden) pin.window.moveTop()
+  schedulePinPersistence()
   broadcastPins()
-  return { ok: true }
+  return { ok: true, pin: pinInfo(pin) }
 }
 
 function closePin(id) {
@@ -2245,6 +2737,16 @@ function closeAllPins() {
     }
   }
   return { ok: true }
+}
+
+function copyPin(id) {
+  const pin = pins.get(String(id || ''))
+  return pin ? copyImageToClipboard(pin.imageDataUrl) : { ok: false, error: '贴图不存在' }
+}
+
+function savePin(id) {
+  const pin = pins.get(String(id || ''))
+  return pin ? saveImageToFile(pin.imageDataUrl, 'ttool-pin.png') : Promise.resolve({ ok: false, error: '贴图不存在' })
 }
 
 function annotatePin(id) {
@@ -2453,8 +2955,14 @@ ipcMain.handle('screenshot:ackCapture', (_e, { id }) => {
   return { ok: true }
 })
 ipcMain.handle('screenshot:listRecentScreenshots', () => recentScreenshotList())
+ipcMain.handle('screenshot:listHistory', (_e, options) => screenshotHistoryList(options || {}))
+ipcMain.handle('screenshot:getHistoryItem', (_e, { id, includeDeleted }) => getScreenshotHistoryItem(id, includeDeleted))
+ipcMain.handle('screenshot:historyStats', () => screenshotHistoryStore().stats())
 ipcMain.handle('screenshot:rememberScreenshot', (_e, { dataUrl, options }) => rememberScreenshot(dataUrl, options || {}))
 ipcMain.handle('screenshot:deleteRecentScreenshot', (_e, { id }) => deleteRecentScreenshot(id))
+ipcMain.handle('screenshot:setScreenshotFavorite', (_e, { id, favorite }) => setScreenshotFavorite(id, favorite))
+ipcMain.handle('screenshot:restoreScreenshot', (_e, { id }) => restoreScreenshot(id))
+ipcMain.handle('screenshot:quickSaveScreenshot', (_e, { id }) => quickSaveScreenshot(id))
 ipcMain.handle('screenshot:overlaySelect', (_e, payload) => completeOverlaySelection(payload || {}))
 ipcMain.handle('screenshot:overlayCancel', (_e, payload) => cancelOverlaySelection(payload && payload.reason))
 ipcMain.handle('screenshot:copyImage', (_e, { dataUrl }) => copyImageToClipboard(dataUrl))
@@ -2462,11 +2970,14 @@ ipcMain.handle('screenshot:saveImage', (_e, { dataUrl, suggestedName }) => saveI
 ipcMain.handle('screenshot:listPins', () => pinList())
 ipcMain.handle('screenshot:createPin', (_e, { dataUrl, options }) => createPinWindow(dataUrl, options || {}))
 ipcMain.handle('screenshot:updatePin', (_e, { id, dataUrl }) => updatePinImage(id, dataUrl))
+ipcMain.handle('screenshot:updatePinState', (_e, { id, action }) => updatePinState(id, action || {}))
 ipcMain.handle('screenshot:focusPin', (_e, { id }) => focusPin(id))
 ipcMain.handle('screenshot:setPinVisible', (_e, { id, visible }) => setPinVisible(id, visible))
 ipcMain.handle('screenshot:closePin', (_e, { id }) => closePin(id))
 ipcMain.handle('screenshot:closeAllPins', () => closeAllPins())
 ipcMain.handle('screenshot:annotatePin', (_e, { id }) => annotatePin(id))
+ipcMain.handle('screenshot:copyPin', (_e, { id }) => copyPin(id))
+ipcMain.handle('screenshot:savePin', (_e, { id }) => savePin(id))
 ipcMain.handle('screenshot:openCaptureToast', (_e, { id }) => openCaptureToast(id))
 ipcMain.handle('screenshot:closeCaptureToast', (_e, { id }) => closeCaptureToast(id))
 
@@ -2654,6 +3165,7 @@ app.whenReady().then(() => {
   if (registered.length) console.log('[ttool] 快速启动器全局热键已注册：' + registered.join('、'))
   else console.warn('[ttool] 全局热键全部注册失败（可能被其它程序占用），可在任务栏图标或主窗内唤起')
   initializeScreenshotShortcuts()
+  restorePersistedPins()
   initializeCodexUsage()
   app.on('activate', () => {
     if (!win || win.isDestroyed()) createWindow()
@@ -2663,6 +3175,7 @@ app.whenReady().then(() => {
 
 app.on('before-quit', () => {
   isQuitting = true
+  try { persistPinManifestNow() } catch { /* keep shutdown non-blocking */ }
   // 常驻悬浮窗不应阻塞退出事件；先销毁它并停止按需启动的 App Server。
   disposeCodexUsage()
 })

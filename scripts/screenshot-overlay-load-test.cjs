@@ -101,9 +101,9 @@ async function runElectronChild() {
   const { app, BrowserWindow, nativeImage } = require('electron')
   const {
     loadOverlayWithFrame,
-    overlayFrameReceiverScript,
     overlayNavigationUrl,
   } = require('../electron/screenshot-overlay-frame.cjs')
+  const { buildScreenshotOverlayPage } = require('../electron/screenshot-overlay-page.cjs')
 
   app.setName('ttool-screenshot-overlay-test')
   app.setPath('userData', process.env.TTOOL_SCREENSHOT_OVERLAY_TEST_USER_DATA)
@@ -128,10 +128,21 @@ async function runElectronChild() {
     assert.ok(png.length > CHROMIUM_URL_LIMIT, `Generated PNG is too small: ${png.length}`)
 
     const meta = { captureId: 'oversized-frame-test', displayId: 1, defaultAction: 'edit' }
-    const html = `<!doctype html><html><body style="margin:0;background:#000"><img id="frozenFrame" alt="" style="width:100vw;height:100vh;object-fit:fill"><script>const META=${JSON.stringify(meta)};${overlayFrameReceiverScript()}</script></body></html>`
+    const html = buildScreenshotOverlayPage(meta.captureId, {
+      id: meta.displayId,
+      bounds: { x: 0, y: 0, width: 192, height: 128 },
+      scaleFactor: 1,
+      rotation: 0,
+      primary: true,
+    }, meta.defaultAction)
     const legacyHtml = `<!doctype html><img src=${JSON.stringify(image.toDataURL())}>`
     const legacyNavigationUrlLength = overlayNavigationUrl(legacyHtml).length
     assert.ok(legacyNavigationUrlLength > CHROMIUM_URL_LIMIT)
+
+    // Pin windows apply the same navigation hardening before their programmatic
+    // small-page load; it must not block the binary frame bridge.
+    win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    win.webContents.on('will-navigate', (event) => event.preventDefault())
 
     const { ready, navigationUrlLength } = loadOverlayWithFrame(win, html, {
       captureId: meta.captureId,
