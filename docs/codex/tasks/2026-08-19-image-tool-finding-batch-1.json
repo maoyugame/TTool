@@ -1,0 +1,17 @@
+{
+  "schema": "ttool.finding-batch.v1",
+  "finding_batch_id": "finding-batch-image-tool-initial-1",
+  "finding_wave_id": "finding-wave-image-tool-initial-1",
+  "findings": [
+    {
+      "finding_id": "finding-artifact-check-crlf-advisory",
+      "failure_class": "evidence_failure",
+      "failure_fingerprint": "bounded-artifact-check-crlf-warning-misclassified-as-whitespace",
+      "artifact_changed": false,
+      "evidence": "The manifest, entry hashes, aggregate hash, and tracked diff check all passed. git diff --no-index --check returned its expected difference exit code and only a line-ending advisory; the wrapper incorrectly treated advisory stderr as a whitespace defect.",
+      "corrective_action": "Accept the exact known CRLF advisory while still rejecting any other new-file diff-check output or an exit code greater than one."
+    }
+  ],
+  "wave_completed": true,
+  "omitted_checks": []
+}

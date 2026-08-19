@@ -1,0 +1,53 @@
+{
+  "validation_budget_schema": "scoped_v1",
+  "test_scope_schema": "impact_v1",
+  "test_scope_plan_id": "2026-08-19-image-tool-final-v1",
+  "active_manifest_sha256": "a4a65f474d8a9cdbd25b96f62c2bac8ddce891e143ab8e6b661e5b775b81ae34",
+  "acceptance_manifest_sha256": "ae8a6d5c4f35b85ff0638889285cccc54a6a5b165f8c5e635ebb8bcf1a5b147c",
+  "transition": "validation_failure_classified",
+  "transition_id": "event:validation-failure-classified:2026-08-19-image-tool:1",
+  "record_head": {
+    "expected_record_version": 18,
+    "expected_last_event_id": "event:validation-attempt-started:2026-08-19-image-tool:1"
+  },
+  "verification_profile": "standard",
+  "validation_scope_kind": "root",
+  "validation_scope_id": "image-tool",
+  "validation_baseline_id": "initial-v1",
+  "previous": {
+    "correction_round": 0,
+    "full_validation_replays": 0,
+    "finding_collection_status": "not_started",
+    "pending_finding_batch_id": null,
+    "consumed_finding_batch_ids": [],
+    "baseline_validation_completed_event_id": null,
+    "delta_validation_status": "not_required",
+    "dependent_validation_status": "not_required",
+    "lifetime_correction_cycles": 0,
+    "lifetime_full_validation_runs": 1,
+    "legacy_mapping_status": "not_required",
+    "circuit_breaker_status": "not_triggered"
+  },
+  "next": {
+    "correction_round": 0,
+    "full_validation_replays": 0,
+    "finding_collection_status": "open",
+    "pending_finding_batch_id": null,
+    "consumed_finding_batch_ids": [],
+    "baseline_validation_completed_event_id": null,
+    "delta_validation_status": "not_required",
+    "dependent_validation_status": "not_required",
+    "lifetime_correction_cycles": 0,
+    "lifetime_full_validation_runs": 1,
+    "legacy_mapping_status": "not_required",
+    "circuit_breaker_status": "not_triggered"
+  },
+  "event": {
+    "finding_wave_id": "finding-wave-image-tool-initial-1",
+    "failure_class": "evidence_failure",
+    "failure_fingerprint": "bounded-artifact-check-crlf-warning-misclassified-as-whitespace",
+    "same_normalized_failure_count": 1,
+    "new_corrective_evidence": false
+  },
+  "history": []
+}

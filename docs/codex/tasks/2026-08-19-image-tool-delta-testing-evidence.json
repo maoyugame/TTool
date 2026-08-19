@@ -1,0 +1,23 @@
+{
+  "schema": "ttool.testing-evidence.v1",
+  "plan_id": "2026-08-19-image-tool-final-v1",
+  "final_artifact_id": "wt-89980514-2b7546d443da0b9c39067a3e77784affe802b51f81931d7ad23ce52a98b711da",
+  "validation_attempt_kind": "delta",
+  "validation_attempt_id": "delta-image-tool-artifact-check-1",
+  "executed_check_ids": ["check-bounded-artifact"],
+  "status": "passed",
+  "check": {
+    "check_id": "check-bounded-artifact",
+    "entry_count": 3,
+    "artifact_sha256": "2b7546d443da0b9c39067a3e77784affe802b51f81931d7ad23ce52a98b711da",
+    "tracked_diff_check": "passed",
+    "new_file_diff_exit": 1,
+    "accepted_advisories": ["Git reported the exact expected LF-to-CRLF working-copy advisory for src/tools/impl/image-tool/index.tsx."],
+    "unexpected_output_count": 0
+  },
+  "artifact_changed": false,
+  "dependent_validation": {
+    "status": "not_required",
+    "reason": "The correction changed only evidence interpretation; the frozen source/docs artifact, runtime graph, dependencies, and active manifest did not change."
+  }
+}

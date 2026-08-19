@@ -1,0 +1,44 @@
+{
+  "schema": "ttool.testing-evidence.v1",
+  "plan_id": "2026-08-19-image-tool-final-v1",
+  "final_artifact_id": "wt-89980514-2b7546d443da0b9c39067a3e77784affe802b51f81931d7ad23ce52a98b711da",
+  "validation_attempt_kind": "initial_full",
+  "status": "completed_with_one_evidence_harness_finding",
+  "executed_check_ids": ["check-bounded-artifact","check-browser-image-workflow","check-typecheck","check-ssr-smoke","check-production-build"],
+  "checks": [
+    {
+      "check_id": "check-bounded-artifact",
+      "status": "evidence_failure",
+      "evidence": "All three file sizes, SHA-256 values, aggregate hash, and tracked-doc whitespace checks matched. The wrapper rejected the new-file check only because Git emitted its expected LF-to-CRLF advisory on stderr; no whitespace defect was reported.",
+      "failure_fingerprint": "bounded-artifact-check-crlf-warning-misclassified-as-whitespace"
+    },
+    {
+      "check_id": "check-typecheck",
+      "status": "passed",
+      "evidence": "npm run typecheck exited 0; tsc --noEmit reported no diagnostics."
+    },
+    {
+      "check_id": "check-ssr-smoke",
+      "status": "passed",
+      "evidence": "npm run smoke exited 0; six tools registered, image-tool SSR rendered successfully, and all seven render targets passed."
+    },
+    {
+      "check_id": "check-production-build",
+      "status": "passed_with_existing_advisory",
+      "evidence": "npm run build exited 0; TypeScript, Vite production bundle, and build-info completed. Vite emitted only the repository's non-blocking >500 kB chunk advisory."
+    },
+    {
+      "check_id": "check-browser-image-workflow",
+      "status": "passed",
+      "evidence": "In-app Browser found 图片处理 via tupian, loaded assets/icon/app.png as 1254x1254 PNG, produced a 320x640 canvas after 640x320 resize plus 90-degree rotation, exposed pressed horizontal flip, exported JPEG/PNG/WebP with deterministic toast filenames, rejected package.json, disabled export at 16385 px, reset all settings and errors, and logged no browser warnings/errors. The Browser download event adapter timed out once, but the app's successful export toast and absence of export error independently proved encoding/download initiation."
+    }
+  ],
+  "desktop_safety": {
+    "driver_class": "in_app_browser",
+    "isolation_boundary": "process_offscreen",
+    "current_desktop_input_used": false,
+    "cleanup": "Browser test tab closed; dedicated Vite session 44709 stopped; TCP port 41723 confirmed without a listener."
+  },
+  "finding_wave_id": "finding-wave-image-tool-initial-1",
+  "artifact_changed": false
+}

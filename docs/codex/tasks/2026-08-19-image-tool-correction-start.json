@@ -1,0 +1,55 @@
+{
+  "validation_budget_schema": "scoped_v1",
+  "test_scope_schema": "impact_v1",
+  "test_scope_plan_id": "2026-08-19-image-tool-final-v1",
+  "active_manifest_sha256": "a4a65f474d8a9cdbd25b96f62c2bac8ddce891e143ab8e6b661e5b775b81ae34",
+  "acceptance_manifest_sha256": "ae8a6d5c4f35b85ff0638889285cccc54a6a5b165f8c5e635ebb8bcf1a5b147c",
+  "transition": "correction_cycle_started",
+  "transition_id": "event:correction-cycle-started:2026-08-19-image-tool:1",
+  "record_head": {
+    "expected_record_version": 21,
+    "expected_last_event_id": "event:finding-wave-closed:2026-08-19-image-tool:1"
+  },
+  "verification_profile": "standard",
+  "validation_scope_kind": "root",
+  "validation_scope_id": "image-tool",
+  "validation_baseline_id": "initial-v1",
+  "previous": {
+    "correction_round": 0,
+    "full_validation_replays": 0,
+    "finding_collection_status": "closed",
+    "pending_finding_batch_id": "finding-batch-image-tool-initial-1",
+    "consumed_finding_batch_ids": [],
+    "baseline_validation_completed_event_id": "event:baseline-validation-completed:2026-08-19-image-tool:1",
+    "delta_validation_status": "not_required",
+    "dependent_validation_status": "not_required",
+    "lifetime_correction_cycles": 0,
+    "lifetime_full_validation_runs": 1,
+    "legacy_mapping_status": "not_required",
+    "circuit_breaker_status": "not_triggered"
+  },
+  "next": {
+    "correction_round": 1,
+    "full_validation_replays": 0,
+    "finding_collection_status": "closed",
+    "pending_finding_batch_id": null,
+    "consumed_finding_batch_ids": ["finding-batch-image-tool-initial-1"],
+    "baseline_validation_completed_event_id": "event:baseline-validation-completed:2026-08-19-image-tool:1",
+    "delta_validation_status": "pending",
+    "dependent_validation_status": "not_required",
+    "lifetime_correction_cycles": 1,
+    "lifetime_full_validation_runs": 1,
+    "legacy_mapping_status": "not_required",
+    "circuit_breaker_status": "not_triggered"
+  },
+  "event": {
+    "finding_batch_id": "finding-batch-image-tool-initial-1",
+    "finding_batch_sha256": "320f307f2a8e7deec0992ba7a9a46dfb04419168893383e15be447cc5cd47bef",
+    "finding_count": 1,
+    "correction_cycle_id": "correction-cycle-image-tool-1",
+    "baseline_validation_completed_event_id": "event:baseline-validation-completed:2026-08-19-image-tool:1",
+    "same_normalized_failure_count": 1,
+    "new_corrective_evidence": true
+  },
+  "history": []
+}

@@ -1,0 +1,34 @@
+{
+  "schema": "context_resource_envelope_v1",
+  "graph_root_id": "2026-08-19-image-tool-root",
+  "node_id": "image-tool-implementation-recovery",
+  "dispatch_event_id": "event:node-dispatched:image-tool-implementation-recovery:1",
+  "grant_id": "grant:image-tool-implementation-recovery:1",
+  "issuer_ref": "root-writer:current_session:image-tool-current-session-e1",
+  "holder": "worker:image-tool-implementation-recovery",
+  "authorization_evidence_ref": "auth:image-tool-source-recovery:1",
+  "issued_at": "2026-08-19T18:25:33+08:00",
+  "expires_at": "2026-08-19T21:25:33+08:00",
+  "instantaneous_nonrenewable": {
+    "outgoing_packet_utf8_bytes": 4096,
+    "return_packet_utf8_bytes": 2048,
+    "inline_raw_log_utf8_bytes": 2048,
+    "active_processes": 1,
+    "worker_fanout": 1
+  },
+  "renewable_grants": [
+    {
+      "grant_id": "grant:image-tool-implementation-recovery:tool-calls:1",
+      "issuer_ref": "root-writer:current_session:image-tool-current-session-e1",
+      "holder": "worker:image-tool-implementation-recovery",
+      "authorization_evidence_ref": "auth:image-tool-recovery-delegation:1",
+      "issued_at": "2026-08-19T18:25:33+08:00",
+      "expires_at": "2026-08-19T21:25:33+08:00",
+      "cumulative_limit": 50,
+      "inherited_usage": 0,
+      "consumed_usage": 0,
+      "renewal_source": "external_issuer"
+    }
+  ],
+  "high_risk_one_shot_authority": null
+}

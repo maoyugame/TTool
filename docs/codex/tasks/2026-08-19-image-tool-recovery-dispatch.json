@@ -1,0 +1,54 @@
+{
+  "schema": "dispatch_v1",
+  "graph_root_id": "2026-08-19-image-tool-root",
+  "node_id": "image-tool-implementation-recovery",
+  "node_dispatched": {
+    "event_id": "event:node-dispatched:image-tool-implementation-recovery:1"
+  },
+  "dispatch_event_id": "event:node-dispatched:image-tool-implementation-recovery:1",
+  "dispatch_contract": "bound_v1",
+  "retry_of_dispatch_event_id": null,
+  "root_writer_epoch": 1,
+  "policy_digest": "374f784e9994f725365890ea02a4366903117fccf98efb8dac279c8f7510ce7e",
+  "routing_decision_ref": "route:image-tool-implementation-recovery:1",
+  "routing_decision_sha256": "114e34940cf988dfb7cf438d235e9fc0023acc9ebbf7343c33e0420c3c966571",
+  "resource_envelope_ref": "grant:image-tool-implementation-recovery:1",
+  "resource_grant": {
+    "schema": "context_resource_envelope_v1",
+    "graph_root_id": "2026-08-19-image-tool-root",
+    "node_id": "image-tool-implementation-recovery",
+    "dispatch_event_id": "event:node-dispatched:image-tool-implementation-recovery:1",
+    "grant_id": "grant:image-tool-implementation-recovery:1",
+    "issuer_ref": "root-writer:current_session:image-tool-current-session-e1",
+    "holder": "worker:image-tool-implementation-recovery",
+    "authorization_evidence_ref": "auth:image-tool-source-recovery:1",
+    "issued_at": "2026-08-19T18:25:33+08:00",
+    "expires_at": "2026-08-19T21:25:33+08:00",
+    "instantaneous_nonrenewable": {
+      "outgoing_packet_utf8_bytes": 4096,
+      "return_packet_utf8_bytes": 2048,
+      "inline_raw_log_utf8_bytes": 2048,
+      "active_processes": 1,
+      "worker_fanout": 1
+    },
+    "renewable_grants": [
+      {
+        "grant_id": "grant:image-tool-implementation-recovery:tool-calls:1",
+        "issuer_ref": "root-writer:current_session:image-tool-current-session-e1",
+        "holder": "worker:image-tool-implementation-recovery",
+        "authorization_evidence_ref": "auth:image-tool-recovery-delegation:1",
+        "issued_at": "2026-08-19T18:25:33+08:00",
+        "expires_at": "2026-08-19T21:25:33+08:00",
+        "cumulative_limit": 50,
+        "inherited_usage": 0,
+        "consumed_usage": 0,
+        "renewal_source": "external_issuer"
+      }
+    ],
+    "high_risk_one_shot_authority": null
+  },
+  "dispatch_packet_sha256": "14686769508f2c02e7d31fe03f949b9b8033947c7a1d3beb1f2c1278e99f9805",
+  "effect_semantics": "none",
+  "effect_idempotency_key": null,
+  "physical_fence_refs": []
+}

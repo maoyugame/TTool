@@ -1,0 +1,88 @@
+{
+  "schema": "ttool.testing-evidence.v1",
+  "task_id": "2026-08-19-image-tool",
+  "recorded_at": "2026-08-19T18:56:00+08:00",
+  "final_artifact_id": "wt-89980514-2b7546d443da0b9c39067a3e77784affe802b51f81931d7ad23ce52a98b711da",
+  "artifact_manifest": {
+    "path": "docs/codex/tasks/2026-08-19-image-tool-artifact-manifest.json",
+    "entry_count": 3,
+    "artifact_sha256": "2b7546d443da0b9c39067a3e77784affe802b51f81931d7ad23ce52a98b711da",
+    "post_test_verification": "match"
+  },
+  "impact_plan": {
+    "path": "docs/codex/tasks/2026-08-19-image-tool-impact-plan.json",
+    "plan_id": "2026-08-19-image-tool-final-v1",
+    "active_manifest_sha256": "a4a65f474d8a9cdbd25b96f62c2bac8ddce891e143ab8e6b661e5b775b81ae34",
+    "acceptance_manifest_sha256": "ae8a6d5c4f35b85ff0638889285cccc54a6a5b165f8c5e635ebb8bcf1a5b147c",
+    "validator_result": "TEST_SCOPE_PLAN_PASS",
+    "scope": "project_full"
+  },
+  "summary": {
+    "selected": 5,
+    "passed": 5,
+    "failed": 0,
+    "testing_status": "succeeded_after_evidence_only_delta"
+  },
+  "checks": [
+    {
+      "check_id": "check-bounded-artifact",
+      "command": "recompute the bounded three-file manifest and validate tracked/new-file whitespace output",
+      "result": "passed",
+      "key_output": "BOUNDED_ARTIFACT_DELTA_PASS entries=3 artifact_sha256=2b7546d443da0b9c39067a3e77784affe802b51f81931d7ad23ce52a98b711da new_file_diff_exit=1 advisory_count=1",
+      "notes": "Initial wrapper misclassified the exact Git LF-to-CRLF advisory; the evidence-only delta accepted only that advisory and rejected every other message. Product bytes never changed."
+    },
+    {
+      "check_id": "check-typecheck",
+      "command": "npm run typecheck",
+      "result": "passed",
+      "exit_code": 0,
+      "key_output": "tsc --noEmit completed without diagnostics"
+    },
+    {
+      "check_id": "check-ssr-smoke",
+      "command": "npm run smoke",
+      "result": "passed",
+      "exit_code": 0,
+      "key_output": "REGISTERED 6 including image-tool; SSR OK: 7 render targets passed"
+    },
+    {
+      "check_id": "check-production-build",
+      "command": "npm run build",
+      "result": "passed",
+      "exit_code": 0,
+      "key_output": "TypeScript, Vite production build, and build-info completed",
+      "notes": "Vite emitted only the non-failing renderer chunk-size advisory."
+    },
+    {
+      "check_id": "check-browser-image-workflow",
+      "command": "isolated in-app Browser workflow against Vite port 41723",
+      "result": "passed",
+      "key_output": [
+        "tupian search discovered 图片处理 and opened the embedded tab",
+        "app.png loaded as 1254x1254 PNG / 1.5 MiB",
+        "640x320 resize plus 90-degree rotation produced canvas width=320 height=640; horizontal flip exposed aria-pressed",
+        "JPEG, WebP, and PNG exports reported deterministic .jpg/.webp/.png download filenames",
+        "package.json produced a recoverable unsupported-file alert; 16385 px disabled export with a precise limit message",
+        "reset restored 1254x1254, aspect lock, rotation 0, no flips, PNG, quality 92, white JPEG background, and cleared errors",
+        "final Browser error/warn logs were empty"
+      ],
+      "visual_review": "passed"
+    }
+  ],
+  "validation_budget": {
+    "correction_round": 1,
+    "full_validation_replays": 0,
+    "correction_scope": "evidence interpretation only",
+    "artifact_changed": false,
+    "delta_validation_status": "satisfied",
+    "dependent_validation_status": "not_required"
+  },
+  "boundaries": {
+    "current_desktop_pointer_keyboard_focus": "not_used_not_required",
+    "desktop_validation_route": "in_app_browser_process_offscreen",
+    "browser_cleanup": "both test tabs closed; Vite sessions 44709 and 82209 stopped; port 41723 confirmed without a listener after each run",
+    "plugin_sdk_surface": "unchanged",
+    "electron_bridge_surface": "unchanged",
+    "push_release": "out_of_scope"
+  }
+}

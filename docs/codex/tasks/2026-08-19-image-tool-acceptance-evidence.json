@@ -1,0 +1,41 @@
+{
+  "schema": "ttool.acceptance-evidence.v1",
+  "task_id": "2026-08-19-image-tool",
+  "recorded_at": "2026-08-19T18:58:00+08:00",
+  "owner": "current_session",
+  "owner_freshness": "same_session_standard_profile_evidence_review",
+  "mode": "read_only_evidence_review",
+  "verdict": "accepted",
+  "final_artifact_id": "wt-89980514-2b7546d443da0b9c39067a3e77784affe802b51f81931d7ad23ce52a98b711da",
+  "artifact_sha256": "2b7546d443da0b9c39067a3e77784affe802b51f81931d7ad23ce52a98b711da",
+  "active_manifest_sha256": "a4a65f474d8a9cdbd25b96f62c2bac8ddce891e143ab8e6b661e5b775b81ae34",
+  "acceptance_manifest_sha256": "ae8a6d5c4f35b85ff0638889285cccc54a6a5b165f8c5e635ebb8bcf1a5b147c",
+  "checks": [
+    {
+      "acceptance_check_id": "accept-image-tool-integrated",
+      "action": "evidence_review",
+      "verdict": "accepted",
+      "testing_check_ids": ["check-bounded-artifact","check-browser-image-workflow","check-typecheck","check-ssr-smoke","check-production-build"],
+      "basis": "The three product files matched the frozen manifest after testing; typecheck, SSR smoke, production build, and the corrected bounded artifact check passed. Isolated Browser evidence proved TTool discovery, local PNG import, real canvas dimensions after resize/rotation, flip state, PNG/JPEG/WebP encoding initiation with deterministic filenames, invalid-file and oversize recovery, full reset semantics, responsive visual integrity at the test viewport, empty app console warnings/errors, and complete tab/server cleanup. Source review independently bound quality and JPEG background controls to React state and canvas/export parameters."
+    }
+  ],
+  "blocking_findings": [],
+  "non_blocking_observations": [
+    "Vite emitted its non-failing renderer chunk-size advisory during the successful production build.",
+    "The in-app Browser download-event adapter timed out once even though the application reported a successful JPEG export; deterministic PNG/JPEG/WebP success toasts and the absence of export errors supplied the application-level evidence.",
+    "A Browser-client telemetry request timed out during an additional control review; it was outside the TTool page and did not appear in the page error/warn log."
+  ],
+  "identity_review": {
+    "manifest_entries_recomputed": 3,
+    "manifest_entries_match": true,
+    "impact_plan_guard": "TEST_SCOPE_PLAN_PASS",
+    "acceptance_contract_guard": "ACCEPTANCE_CONTRACT_PASS",
+    "testing_summary": "5/5 passed after one evidence-only delta",
+    "artifact_changed_during_correction": false
+  },
+  "residual_manual_boundary": [
+    "No physical current-desktop input, global hotkeys, or focus takeover was used or required.",
+    "Animated images are intentionally rasterized as a static frame; metadata preservation, crop, batch processing, and annotation remain documented out of scope.",
+    "Codec availability remains browser-runtime dependent; unsupported encoding is handled by an in-tool recoverable error."
+  ]
+}

@@ -1,0 +1,42 @@
+packet_schema: delegated_work_v2
+execution_role: implementation
+graph_root_id: 2026-08-19-image-tool-root
+node_id: image-tool-implementation
+dispatch_event_id: event:node-dispatched:image-tool-implementation:1
+dispatch_packet_sha256: f8be290ce32d60725c3ece75ec7a8f7bda65a992ef754a7b9e3e045d6fd6a625
+goal: Build one self-contained, production-ready built-in TTool image-processing module using only React and browser APIs.
+done_when:
+- Auto-register `image-tool` as “图片处理” in category 设计, searchable by Chinese/pinyin/English aliases.
+- File picker and drag/drop load common raster images; show name/type/source dimensions/size and actionable validation or decode errors.
+- Users can resize with optional aspect lock, rotate 90-degree steps, flip horizontally/vertically, reset, and see output preview/dimensions.
+- Users can export PNG/JPEG/WebP, tune lossy quality, choose the opaque background used for JPEG, and download a deterministic filename.
+- Object URLs and temporary browser resources are revoked on replacement/unmount; SSR render does not touch browser-only globals.
+scope:
+- Create only `src/tools/impl/image-tool/**` (index.tsx, optional local CSS/helpers/assets).
+- Prefer a responsive original/preview/settings layout consistent with ToolPage/ToolHeader and theme variables.
+- Bound inputs defensively (50 MiB source, 16384 px per side, 40 MP output); explain animated GIF first-frame behavior if accepted.
+out_of_scope:
+- Registry/shell/shared UI edits, Electron/native bridge, plugin SDK/manifest/loader, package dependencies/metadata, batch conversion, crop/annotation/metadata preservation, docs/workflow/Git.
+dependencies:
+- id: repository-baseline
+  evidence: HEAD 89980514ccc9e4588e79adb97de6c0199883a87c plus current dirty workflow records; preserve all unrelated changes.
+read_scope:
+- AGENTS.md, CLAUDE.md, TOOLS.md
+- src/tools/types.ts, src/tools/registry.ts, src/tools/impl/index.ts, src/tools/ui.tsx
+- src/tools/impl/json.tsx, src/store/persistentState.ts, src/store/toolbox.tsx, src/styles/tokens.css, scripts/ssr-entry.tsx
+write_scope:
+- src/tools/impl/image-tool/**
+forbidden_writes:
+- every path outside `src/tools/impl/image-tool/**`; Git index; dependencies; workflow records
+routing_decision_ref: docs/codex/tasks/2026-08-19-image-tool-implementation-routing.json
+routing_decision_sha256: 3ce70cfc7baa6596cad1857325e4f63dfb9361651fa9a207367d5b4716fbb7c4
+resource_envelope_ref: docs/codex/tasks/2026-08-19-image-tool-implementation-resource.json
+effect_intent_refs: []
+effect_semantics: none
+effect_idempotency_key: null
+physical_fence_refs: []
+validation:
+- `npm run typecheck`
+- `npm run smoke`
+- Inspect `git diff -- src/tools/impl/image-tool` for scope and theme/browser-lifecycle correctness.
+return_target: collaboration mailbox to `/root`; <=2048 UTF-8 bytes with status, packet_id, result_sha256, outputs, checks, risks, next action. Do not commit, push, or spawn workers.

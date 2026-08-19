@@ -1,0 +1,52 @@
+{
+  "test_scope_schema": "impact_v1",
+  "plan_id": "2026-08-19-image-tool-final-v1",
+  "verification_profile": "standard",
+  "validation_attempt_kind": "initial_full",
+  "final_artifact_id": "wt-89980514-2b7546d443da0b9c39067a3e77784affe802b51f81931d7ad23ce52a98b711da",
+  "active_manifest_sha256": "a4a65f474d8a9cdbd25b96f62c2bac8ddce891e143ab8e6b661e5b775b81ae34",
+  "acceptance_manifest_sha256": "ae8a6d5c4f35b85ff0638889285cccc54a6a5b165f8c5e635ebb8bcf1a5b147c",
+  "matrix_semantics": "active_manifest_complete",
+  "manifest_scope": "project_full",
+  "change_set": [
+    {"change_id":"change-image-tool","path":"src/tools/impl/image-tool/index.tsx","component_id":"image_tool","change_kind":"added","claim_ids":["claim-image-tool"]},
+    {"change_id":"change-readme","path":"README.md","component_id":"documentation","change_kind":"documentation","claim_ids":["claim-docs-current"]},
+    {"change_id":"change-tools-doc","path":"TOOLS.md","component_id":"documentation","change_kind":"documentation","claim_ids":["claim-docs-current"]}
+  ],
+  "affected_claims": [
+    {"claim_id":"claim-image-tool","component_id":"image_tool","affected_reason":"direct_change","evidence_ids":["evidence-image-source","evidence-artifact-manifest"]},
+    {"claim_id":"claim-docs-current","component_id":"documentation","affected_reason":"direct_change","evidence_ids":["evidence-doc-diff","evidence-artifact-manifest"]},
+    {"claim_id":"claim-tool-discovery","component_id":"tool_registry_runtime","affected_reason":"proven_dependency","evidence_ids":["evidence-vite-auto-discovery"]},
+    {"claim_id":"claim-browser-operations","component_id":"renderer_runtime","affected_reason":"proven_dependency","evidence_ids":["evidence-browser-route"]},
+    {"claim_id":"claim-project-integrity","component_id":"project_build","affected_reason":"mandatory_project_policy","evidence_ids":["evidence-project-policy","evidence-unfilterable-project-runners"]}
+  ],
+  "dependency_edges": [
+    {"edge_id":"edge-registry-tool","from_component_id":"tool_registry_runtime","to_component_id":"image_tool","dependency_kind":"runtime","evidence_ids":["evidence-vite-auto-discovery"]},
+    {"edge_id":"edge-renderer-tool","from_component_id":"renderer_runtime","to_component_id":"image_tool","dependency_kind":"runtime","evidence_ids":["evidence-browser-route"]}
+  ],
+  "dependency_discovery": {
+    "status": "complete",
+    "evidence_ids": ["evidence-final-diff-paths","evidence-vite-auto-discovery","evidence-browser-route","evidence-project-policy","evidence-sdk-exclusion"],
+    "probe_check_ids": []
+  },
+  "selected_checks": [
+    {"check_id":"check-bounded-artifact","command":"recompute the bounded three-file manifest and run git diff --check for tracked product docs","scope_level":"changed","wave":1,"covers_claim_ids":["claim-image-tool","claim-docs-current"],"inclusion_reason":"direct_claim","evidence_ids":["evidence-artifact-manifest","evidence-image-source","evidence-doc-diff"]},
+    {"check_id":"check-browser-image-workflow","command":"in-app Browser: discover 图片处理, upload app.png, resize/rotate/flip, switch JPEG quality/background, download, test invalid-file recovery, and inspect console","scope_level":"direct_dependents","wave":2,"covers_claim_ids":["claim-tool-discovery","claim-browser-operations"],"inclusion_reason":"proven_dependency","evidence_ids":["evidence-vite-auto-discovery","evidence-browser-route"]},
+    {"check_id":"check-typecheck","command":"npm run typecheck","scope_level":"project_full","wave":4,"covers_claim_ids":["claim-project-integrity"],"inclusion_reason":"mandatory_project_policy","evidence_ids":["evidence-project-policy","evidence-unfilterable-project-runners"]},
+    {"check_id":"check-ssr-smoke","command":"npm run smoke","scope_level":"project_full","wave":4,"covers_claim_ids":["claim-project-integrity"],"inclusion_reason":"runner_granularity_limit","evidence_ids":["evidence-project-policy","evidence-unfilterable-project-runners"]},
+    {"check_id":"check-production-build","command":"npm run build","scope_level":"project_full","wave":4,"covers_claim_ids":["claim-project-integrity"],"inclusion_reason":"runner_granularity_limit","evidence_ids":["evidence-project-policy","evidence-unfilterable-project-runners"]}
+  ],
+  "executed_check_ids": ["check-bounded-artifact","check-browser-image-workflow","check-typecheck","check-ssr-smoke","check-production-build"],
+  "excluded_checks": [
+    {"check_id":"check-plugin-sdk-example","exclusion_reason":"plugin_sdk_manifest_and_loader_unchanged","evidence_ids":["evidence-sdk-exclusion"]},
+    {"check_id":"check-current-desktop-global-input","exclusion_reason":"renderer_behavior_is_proven_with_process_offscreen_browser_without_current_desktop_input","evidence_ids":["evidence-browser-route","evidence-desktop-safety-boundary"]},
+    {"check_id":"check-push-release","exclusion_reason":"publication_is_out_of_scope","evidence_ids":["evidence-user-scope-boundary"]}
+  ],
+  "project_full_escalation": {
+    "reason": "runner_granularity_limit",
+    "evidence_ids": ["evidence-unfilterable-project-runners","evidence-project-policy"]
+  },
+  "acceptance_checks": [
+    {"acceptance_check_id":"accept-image-tool-integrated","action":"evidence_review","reason":"testing_evidence_review","testing_check_ids":["check-bounded-artifact","check-browser-image-workflow","check-typecheck","check-ssr-smoke","check-production-build"],"evidence_ids":["evidence-artifact-manifest","evidence-testing-results","evidence-browser-route"]}
+  ]
+}

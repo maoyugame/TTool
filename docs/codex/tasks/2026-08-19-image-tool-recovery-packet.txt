@@ -1,0 +1,43 @@
+packet_schema: delegated_work_v2
+execution_role: implementation
+graph_root_id: 2026-08-19-image-tool-root
+node_id: image-tool-implementation-recovery
+dispatch_event_id: event:node-dispatched:image-tool-implementation-recovery:1
+dispatch_packet_sha256: 14686769508f2c02e7d31fe03f949b9b8033947c7a1d3beb1f2c1278e99f9805
+goal: Independently audit, repair if needed, and revalidate the provisional built-in image-tool module after the prior dispatch was invalidated by a resource-envelope breach.
+done_when:
+- Inspect the full `src/tools/impl/image-tool/index.tsx` against TTool contracts and the frozen user-facing feature scope.
+- Correct only concrete correctness, accessibility, lifecycle, SSR, output-format, responsive, or theme-variable defects found in that file.
+- Confirm registration metadata, import/drop validation, resize/aspect lock, 90-degree rotate, flips, reset, preview, PNG/JPEG/WebP export, quality/background behavior, deterministic download, and object URL cleanup.
+- Return the final SHA-256 and sequential check evidence.
+scope:
+- Read the candidate file and only the minimal TTool contracts needed to validate it.
+- Write only `src/tools/impl/image-tool/index.tsx` if a concrete repair is required.
+out_of_scope:
+- Every other source/doc/workflow path, Electron/plugin SDK/package changes, browser UI testing, Git index/commit/push, dependencies, worker fan-out.
+dependencies:
+- id: provisional-image-tool-output
+  evidence: prior failed dispatch returned `src/tools/impl/image-tool/index.tsx`; its tests passed but final digest was not verified.
+read_scope:
+- AGENTS.md, CLAUDE.md
+- src/tools/impl/image-tool/index.tsx
+- src/tools/types.ts, src/tools/impl/index.ts, src/tools/ui.tsx, src/store/toolbox.tsx, src/styles/tokens.css, scripts/ssr-entry.tsx as needed
+write_scope:
+- src/tools/impl/image-tool/index.tsx
+forbidden_writes:
+- every other path; Git index; dependencies; workflow records
+routing_decision_ref: docs/codex/tasks/2026-08-19-image-tool-recovery-routing.json
+routing_decision_sha256: 114e34940cf988dfb7cf438d235e9fc0023acc9ebbf7343c33e0420c3c966571
+resource_envelope_ref: docs/codex/tasks/2026-08-19-image-tool-recovery-resource.json
+resource_rule:
+- Run commands strictly sequentially. Never use Promise.all, parallel tool calls, background jobs, or a shell command that creates more than one child process at a time.
+- Do not spawn workers even though the generic envelope field is one.
+effect_intent_refs: []
+effect_semantics: none
+effect_idempotency_key: null
+physical_fence_refs: []
+validation:
+- Inspect the final diff for scope and correctness.
+- Run `npm run typecheck`, then `npm run smoke`, strictly one after the other.
+- Compute SHA-256 of the final file after all edits and checks.
+return_target: collaboration mailbox to `/root`; <=2048 UTF-8 bytes with status, packet_id, final SHA-256, outputs, sequential checks, changes, risks, and next action. Do not commit, push, or spawn workers.
