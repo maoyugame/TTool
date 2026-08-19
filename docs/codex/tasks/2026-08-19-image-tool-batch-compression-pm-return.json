@@ -1,0 +1,20 @@
+{
+  "schema": "node_return_v1",
+  "graph_root_id": "2026-08-19-image-tool-batch-compression-root",
+  "node_id": "image-tool-product-research",
+  "dispatch_event_id": "event:node-dispatched:image-tool-product-research:1",
+  "active_dispatch_event_id": "event:node-dispatched:image-tool-product-research:1",
+  "root_writer_epoch": 1,
+  "dispatch_packet_sha256": "480e0b578aa222cb81b256315d04cb6b1b6b836e2801a22a45394391ee12d26f",
+  "packet_id": "image-tool-product-research",
+  "result_ref": {
+    "artifact_path": "2026-08-19-image-tool-batch-compression-product-brief.md",
+    "sha256": "0ea2e939d4df0fdeba9e4700aa19c119ca863b2a8e6a3cb43af0f605d83720ba",
+    "bytes": 4855,
+    "summary": "Core competitor facts and local-first batch-compressor MVP/P1/P2 judgment are faithfully synthesized."
+  },
+  "result_sha256": "0ea2e939d4df0fdeba9e4700aa19c119ca863b2a8e6a3cb43af0f605d83720ba",
+  "dedup_state": "new",
+  "known_packet_id": null,
+  "known_result_sha256": null
+}

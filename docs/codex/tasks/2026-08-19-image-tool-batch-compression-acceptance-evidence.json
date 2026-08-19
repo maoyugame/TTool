@@ -1,0 +1,41 @@
+{
+  "schema": "ttool.acceptance-evidence.v1",
+  "task_id": "2026-08-19-image-tool-batch-compression",
+  "recorded_at": "2026-08-20T00:46:26+08:00",
+  "owner": "/root/image_tool_batch_compression_acceptance",
+  "owner_freshness": "independent_sol_max_replay_review",
+  "mode": "read_only_evidence_review_after_full_replay",
+  "verdict": "accepted",
+  "final_artifact_id": "wt-ace57ce-4cead510027288cba1e275f9aad33143653463d78835eee03eb866a438bf9753",
+  "artifact_sha256": "4cead510027288cba1e275f9aad33143653463d78835eee03eb866a438bf9753",
+  "active_manifest_sha256": "c4ab674e4b8b0eb399e235ba38aa458f91c5ba69099608925539e5c4c86c1767",
+  "acceptance_manifest_sha256": "fe225b7a19082e0246f00582deb72ea5ac605eaf01174ff29b87c96ef85f9346",
+  "checks": [
+    {
+      "acceptance_check_id": "accept-image-tool-batch-compression",
+      "action": "evidence_review",
+      "verdict": "accepted",
+      "testing_check_ids": ["check-bounded-artifact", "check-source-lifecycle-zip-audit", "check-browser-batch-workflow", "check-typecheck", "check-ssr-smoke", "check-production-build"],
+      "basis": "The reviewer independently recomputed the exact three-file artifact identity, verified one-chooser PNG/JPEG/WebP plus invalid-file coverage, confirmed preserve-source behavior and honest growth reporting, reviewed sequential fault isolation and lifecycle cleanup, and accepted the downloaded three-entry store-mode ZIP evidence. Typecheck, SSR smoke, production build, source/ZIP audit, browser workflow, cleanup, and post-test identity all passed."
+    }
+  ],
+  "blocking_findings": [],
+  "non_blocking_observations": [
+    "A preview decode already in flight immediately before batch start cannot be aborted, although epoch guards discard its stale result and processing no longer triggers a new preview decode.",
+    "Vite emitted its non-failing renderer chunk-size advisory during the successful production build."
+  ],
+  "identity_review": {
+    "manifest_entries_recomputed": 3,
+    "manifest_entries_match": true,
+    "aggregate_payload_utf8_bytes": 268,
+    "aggregate_sha256_recomputed": "4cead510027288cba1e275f9aad33143653463d78835eee03eb866a438bf9753",
+    "impact_plan_guard": "TEST_SCOPE_PLAN_PASS",
+    "testing_summary": "6/6 passed after one correction round and one full replay",
+    "artifact_changed_during_correction": true
+  },
+  "residual_manual_boundary": [
+    "No physical current-desktop pointer, keyboard, focus takeover, or global hotkey was used or required.",
+    "Metadata preservation, animated-image preservation, target-size compression, naming templates, and per-item overrides remain documented follow-up scope.",
+    "Compression effectiveness and codec availability remain browser-runtime and image-content dependent; measured growth and unsupported codecs are reported honestly per item."
+  ]
+}

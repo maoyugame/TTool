@@ -1,0 +1,13 @@
+{
+  "schema": "acceptance_review_v1",
+  "verdict": "accepted",
+  "blocking_findings": [],
+  "non_blocking_observations": [
+    "A preview decode already in flight before Start cannot be aborted; epoch guards discard it, but rapid selection/start may briefly overlap that decode with processing. The prior processing-triggered preview reload path is closed.",
+    "The successful Vite replay build retained its non-failing chunk-size advisory."
+  ],
+  "evidence_summary": "All first-review blockers are closed. The three live entries match their manifest; the exact 268-byte path<TAB>size<TAB>sha256<LF> payload independently recomputes to 4cead510027288cba1e275f9aad33143653463d78835eee03eb866a438bf9753. Browser replay imported PNG/JPEG/WebP plus an invalid file in one chooser, preserved all three source formats with honest growth reporting, and completed shared 50% resize/90-degree rotation/horizontal flip JPEG and WebP conversions 3/3. Source confirms locale-independent ZIP collision folding and processing-time preview suppression/resume. Full replay records typecheck, SSR 7/7, build, source/ZIP audit, a valid 3-entry store-mode WebP ZIP, cleanup, and post-test identity. Docs and scope remain aligned; SDK/Electron/dependency surfaces are unchanged. Next: the root may integrate this accepted gate result.",
+  "reviewed_artifact_sha256": "4cead510027288cba1e275f9aad33143653463d78835eee03eb866a438bf9753",
+  "active_manifest_sha256": "c4ab674e4b8b0eb399e235ba38aa458f91c5ba69099608925539e5c4c86c1767",
+  "acceptance_manifest_sha256": "fe225b7a19082e0246f00582deb72ea5ac605eaf01174ff29b87c96ef85f9346"
+}

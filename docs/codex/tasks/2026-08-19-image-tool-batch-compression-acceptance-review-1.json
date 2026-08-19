@@ -1,0 +1,22 @@
+{
+  "schema": "acceptance_review_v1",
+  "verdict": "rejected",
+  "blocking_findings": [
+    {
+      "id": "artifact-identity-mismatch",
+      "finding": "Using the manifest's stated path<TAB>size<TAB>sha256<LF> algorithm over its three matching live entries yields d913f9399ee8971b0004c6811cb351774e141d11a45cef6e68c3ebd6b3ec8b16, not frozen/recorded ce33cbb1e9f2d09cf80b0e937443846eedd916b27a5476312eb30a6aa44eb685. The claimed final_artifact_id and test binding are therefore unauthenticated."
+    },
+    {
+      "id": "mixed-input-coverage-gap",
+      "finding": "The frozen brief requires one import mixing PNG, JPEG, WebP and an invalid file. Browser evidence imported app.png, translate.png, json.png and README.md; JPEG/WebP were only output reruns. JPEG/WebP input decoding, preserve-source behavior and the required mixed-format queue remain unverified."
+    }
+  ],
+  "non_blocking_observations": [
+    "ZIP collision folding uses locale-dependent toLocaleLowerCase(), so case-only naming behavior is not deterministic across locales.",
+    "Batch start can reload the selected full-resolution preview while processing decodes another raster, leaving a large-input peak-memory risk."
+  ],
+  "evidence_summary": "Static review supports sequential fault isolation, measured size/savings, honest PNG growth text, stale-work epochs, cleanup/SSR guards, and classic UTF-8 store ZIP/CRC/bounds; docs match the implemented scope. Recorded typecheck, SSR, build, browser and ZIP checks pass, but the two blocking evidence defects prevent acceptance.",
+  "reviewed_artifact_sha256": "d913f9399ee8971b0004c6811cb351774e141d11a45cef6e68c3ebd6b3ec8b16",
+  "active_manifest_sha256": "6bf621b334538197c60188c697062ab95df42aa4029c3b0588575fce913773fb",
+  "acceptance_manifest_sha256": "2aede7a669e7931522b7a1d01c36bc8d81086f575c79a489760889a93a914523"
+}

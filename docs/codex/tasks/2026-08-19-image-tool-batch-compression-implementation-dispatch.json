@@ -1,0 +1,54 @@
+{
+  "schema": "dispatch_v1",
+  "graph_root_id": "2026-08-19-image-tool-batch-compression-root",
+  "node_id": "image-tool-batch-compression-implementation",
+  "node_dispatched": {
+    "event_id": "event:node-dispatched:image-tool-batch-compression-implementation:1"
+  },
+  "dispatch_event_id": "event:node-dispatched:image-tool-batch-compression-implementation:1",
+  "dispatch_contract": "bound_v1",
+  "retry_of_dispatch_event_id": null,
+  "root_writer_epoch": 1,
+  "policy_digest": "50f8cbdc12ba543a334d8f5b31b40aacdc4879b6364c1cedf2ca8ffbc19d0b50",
+  "routing_decision_ref": "route:image-tool-batch-compression-implementation:1",
+  "routing_decision_sha256": "6e85115ab159185e795790f114b204c6496f784eb71212f00e439cdec38d9a64",
+  "resource_envelope_ref": "grant:image-tool-batch-compression-implementation:1",
+  "resource_grant": {
+    "schema": "context_resource_envelope_v1",
+    "graph_root_id": "2026-08-19-image-tool-batch-compression-root",
+    "node_id": "image-tool-batch-compression-implementation",
+    "dispatch_event_id": "event:node-dispatched:image-tool-batch-compression-implementation:1",
+    "grant_id": "grant:image-tool-batch-compression-implementation:1",
+    "issuer_ref": "root-writer:current_session:image-tool-batch-compression-current-session-e1",
+    "holder": "worker:image-tool-batch-compression-implementation",
+    "authorization_evidence_ref": "auth:image-tool-batch-compression-source:1",
+    "issued_at": "2026-08-19T23:47:28+08:00",
+    "expires_at": "2026-08-20T03:47:28+08:00",
+    "instantaneous_nonrenewable": {
+      "outgoing_packet_utf8_bytes": 4096,
+      "return_packet_utf8_bytes": 2048,
+      "inline_raw_log_utf8_bytes": 2048,
+      "active_processes": 3,
+      "worker_fanout": 1
+    },
+    "renewable_grants": [
+      {
+        "grant_id": "grant:image-tool-batch-compression-implementation:tool-calls:1",
+        "issuer_ref": "root-writer:current_session:image-tool-batch-compression-current-session-e1",
+        "holder": "worker:image-tool-batch-compression-implementation",
+        "authorization_evidence_ref": "auth:image-tool-batch-compression-source:1",
+        "issued_at": "2026-08-19T23:47:28+08:00",
+        "expires_at": "2026-08-20T03:47:28+08:00",
+        "cumulative_limit": 80,
+        "inherited_usage": 0,
+        "consumed_usage": 0,
+        "renewal_source": "external_issuer"
+      }
+    ],
+    "high_risk_one_shot_authority": null
+  },
+  "dispatch_packet_sha256": "ae47e81107d5b59698888a839767463240ff47836866798cffdaaab25ce91e12",
+  "effect_semantics": "none",
+  "effect_idempotency_key": null,
+  "physical_fence_refs": []
+}

@@ -1,0 +1,20 @@
+{
+  "schema": "node_return_v1",
+  "graph_root_id": "2026-08-19-image-tool-batch-compression-root",
+  "node_id": "image-tool-batch-compression-implementation",
+  "dispatch_event_id": "event:node-dispatched:image-tool-batch-compression-implementation:1",
+  "active_dispatch_event_id": "event:node-dispatched:image-tool-batch-compression-implementation:1",
+  "root_writer_epoch": 1,
+  "dispatch_packet_sha256": "ae47e81107d5b59698888a839767463240ff47836866798cffdaaab25ce91e12",
+  "packet_id": "image-tool-batch-compression-implementation",
+  "result_ref": {
+    "artifact_path": "src/tools/impl/image-tool/index.tsx",
+    "sha256": "9f0fa34522b3ccc876fb4abd7583f36c05f8b481484ad6f606a72f097d151bb1",
+    "bytes": 75516,
+    "summary": "Single-file renderer implementation of the frozen local batch image compression MVP."
+  },
+  "result_sha256": "9f0fa34522b3ccc876fb4abd7583f36c05f8b481484ad6f606a72f097d151bb1",
+  "dedup_state": "new",
+  "known_packet_id": null,
+  "known_result_sha256": null
+}

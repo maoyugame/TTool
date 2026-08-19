@@ -1,0 +1,53 @@
+{
+  "test_scope_schema": "impact_v1",
+  "plan_id": "2026-08-19-image-tool-batch-compression-final-v1",
+  "verification_profile": "standard",
+  "validation_attempt_kind": "full_replay",
+  "final_artifact_id": "wt-ace57ce-4cead510027288cba1e275f9aad33143653463d78835eee03eb866a438bf9753",
+  "active_manifest_sha256": "c4ab674e4b8b0eb399e235ba38aa458f91c5ba69099608925539e5c4c86c1767",
+  "acceptance_manifest_sha256": "fe225b7a19082e0246f00582deb72ea5ac605eaf01174ff29b87c96ef85f9346",
+  "matrix_semantics": "active_manifest_complete",
+  "manifest_scope": "project_full",
+  "change_set": [
+    {"change_id":"change-image-tool-batch","path":"src/tools/impl/image-tool/index.tsx","component_id":"image_tool","change_kind":"modified","claim_ids":["claim-batch-compression"]},
+    {"change_id":"change-readme","path":"README.md","component_id":"documentation","change_kind":"documentation","claim_ids":["claim-docs-current"]},
+    {"change_id":"change-tools-doc","path":"TOOLS.md","component_id":"documentation","change_kind":"documentation","claim_ids":["claim-docs-current"]}
+  ],
+  "affected_claims": [
+    {"claim_id":"claim-batch-compression","component_id":"image_tool","affected_reason":"direct_change","evidence_ids":["evidence-image-source","evidence-artifact-manifest"]},
+    {"claim_id":"claim-docs-current","component_id":"documentation","affected_reason":"direct_change","evidence_ids":["evidence-doc-diff","evidence-artifact-manifest"]},
+    {"claim_id":"claim-tool-discovery","component_id":"tool_registry_runtime","affected_reason":"proven_dependency","evidence_ids":["evidence-vite-auto-discovery"]},
+    {"claim_id":"claim-browser-batch-workflow","component_id":"renderer_runtime","affected_reason":"proven_dependency","evidence_ids":["evidence-browser-route"]},
+    {"claim_id":"claim-project-integrity","component_id":"project_build","affected_reason":"mandatory_project_policy","evidence_ids":["evidence-project-policy","evidence-unfilterable-project-runners"]}
+  ],
+  "dependency_edges": [
+    {"edge_id":"edge-registry-tool","from_component_id":"tool_registry_runtime","to_component_id":"image_tool","dependency_kind":"runtime","evidence_ids":["evidence-vite-auto-discovery"]},
+    {"edge_id":"edge-renderer-tool","from_component_id":"renderer_runtime","to_component_id":"image_tool","dependency_kind":"runtime","evidence_ids":["evidence-browser-route"]}
+  ],
+  "dependency_discovery": {
+    "status": "complete",
+    "evidence_ids": ["evidence-final-diff-paths","evidence-vite-auto-discovery","evidence-browser-route","evidence-project-policy","evidence-sdk-exclusion"],
+    "probe_check_ids": []
+  },
+  "selected_checks": [
+    {"check_id":"check-bounded-artifact","command":"recompute the bounded three-file manifest and run git diff --check for tracked product files","scope_level":"changed","wave":1,"covers_claim_ids":["claim-batch-compression","claim-docs-current"],"inclusion_reason":"direct_claim","evidence_ids":["evidence-artifact-manifest","evidence-image-source","evidence-doc-diff"]},
+    {"check_id":"check-source-lifecycle-zip-audit","command":"review queue state, cancellation epochs, raster/canvas/Object URL/timer cleanup, measured compression reporting, and classic UTF-8 store-mode ZIP structure","scope_level":"changed","wave":1,"covers_claim_ids":["claim-batch-compression"],"inclusion_reason":"direct_claim","evidence_ids":["evidence-image-source","evidence-worker-zip-harness"]},
+    {"check_id":"check-browser-batch-workflow","command":"in-app Browser: discover 图片处理, import multiple valid images plus an invalid file, apply shared resize/transforms and JPEG/WebP quality, verify isolated statuses and measured bytes, exercise individual and ZIP downloads, and inspect console","scope_level":"direct_dependents","wave":2,"covers_claim_ids":["claim-tool-discovery","claim-browser-batch-workflow"],"inclusion_reason":"proven_dependency","evidence_ids":["evidence-vite-auto-discovery","evidence-browser-route"]},
+    {"check_id":"check-typecheck","command":"npm run typecheck","scope_level":"project_full","wave":4,"covers_claim_ids":["claim-project-integrity"],"inclusion_reason":"mandatory_project_policy","evidence_ids":["evidence-project-policy","evidence-unfilterable-project-runners"]},
+    {"check_id":"check-ssr-smoke","command":"npm run smoke","scope_level":"project_full","wave":4,"covers_claim_ids":["claim-project-integrity"],"inclusion_reason":"runner_granularity_limit","evidence_ids":["evidence-project-policy","evidence-unfilterable-project-runners"]},
+    {"check_id":"check-production-build","command":"npm run build","scope_level":"project_full","wave":4,"covers_claim_ids":["claim-project-integrity"],"inclusion_reason":"runner_granularity_limit","evidence_ids":["evidence-project-policy","evidence-unfilterable-project-runners"]}
+  ],
+  "executed_check_ids": ["check-bounded-artifact","check-source-lifecycle-zip-audit","check-browser-batch-workflow","check-typecheck","check-ssr-smoke","check-production-build"],
+  "excluded_checks": [
+    {"check_id":"check-plugin-sdk-example","exclusion_reason":"plugin_sdk_manifest_loader_and_electron_bridge_unchanged","evidence_ids":["evidence-sdk-exclusion"]},
+    {"check_id":"check-current-desktop-global-input","exclusion_reason":"renderer_behavior_is_tested_with_non_interfering_in_app_browser_without_current_desktop_input","evidence_ids":["evidence-browser-route","evidence-desktop-safety-boundary"]},
+    {"check_id":"check-push-release","exclusion_reason":"publication_is_out_of_scope","evidence_ids":["evidence-user-scope-boundary"]}
+  ],
+  "project_full_escalation": {
+    "reason": "runner_granularity_limit",
+    "evidence_ids": ["evidence-unfilterable-project-runners","evidence-project-policy"]
+  },
+  "acceptance_checks": [
+    {"acceptance_check_id":"accept-image-tool-batch-compression","action":"evidence_review","reason":"testing_evidence_review","testing_check_ids":["check-bounded-artifact","check-source-lifecycle-zip-audit","check-browser-batch-workflow","check-typecheck","check-ssr-smoke","check-production-build"],"evidence_ids":["evidence-artifact-manifest","evidence-testing-results","evidence-browser-route","evidence-independent-review"]}
+  ]
+}

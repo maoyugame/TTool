@@ -1,0 +1,103 @@
+{
+  "schema": "ttool.testing-evidence.v1",
+  "task_id": "2026-08-19-image-tool-batch-compression",
+  "recorded_at": "2026-08-20T00:40:39+08:00",
+  "final_artifact_id": "wt-ace57ce-4cead510027288cba1e275f9aad33143653463d78835eee03eb866a438bf9753",
+  "artifact_manifest": {
+    "path": "docs/codex/tasks/2026-08-19-image-tool-batch-compression-artifact-manifest.json",
+    "entry_count": 3,
+    "artifact_sha256": "4cead510027288cba1e275f9aad33143653463d78835eee03eb866a438bf9753",
+    "post_test_verification": "match"
+  },
+  "impact_plan": {
+    "path": "docs/codex/tasks/2026-08-19-image-tool-batch-compression-impact-plan.json",
+    "plan_id": "2026-08-19-image-tool-batch-compression-final-v1",
+    "active_manifest_sha256": "c4ab674e4b8b0eb399e235ba38aa458f91c5ba69099608925539e5c4c86c1767",
+    "acceptance_manifest_sha256": "fe225b7a19082e0246f00582deb72ea5ac605eaf01174ff29b87c96ef85f9346",
+    "validator_result": "TEST_SCOPE_PLAN_PASS",
+    "scope": "project_full"
+  },
+  "summary": {
+    "selected": 6,
+    "passed": 6,
+    "failed": 0,
+    "testing_status": "succeeded_after_full_replay"
+  },
+  "checks": [
+    {
+      "check_id": "check-bounded-artifact",
+      "command": "recompute the bounded three-file manifest and run git diff --check",
+      "result": "passed",
+      "key_output": "3/3 bytes and SHA-256 identities matched after all replay tests; exact path<TAB>size<TAB>sha256<LF> payload was 268 UTF-8 bytes and artifact_sha256=4cead510027288cba1e275f9aad33143653463d78835eee03eb866a438bf9753; only Git LF-to-CRLF advisories were emitted"
+    },
+    {
+      "check_id": "check-source-lifecycle-zip-audit",
+      "command": "root review of queue/cancellation/resource/ZIP paths plus worker ZIP extraction harness and runtime downloaded ZIP inspection",
+      "result": "passed",
+      "key_output": [
+        "Sequential per-item decode/encode with stale-work epochs and isolated failures",
+        "Raster, canvas, source Object URL, transient download URL, timer, result, and archive cleanup paths reviewed; selected preview decode is suppressed while batch processing is active",
+        "UTF-8 classic ZIP local/central/EOCD headers, CRC-32, offsets, bounds, and collision-safe names reviewed",
+        "ZIP collision folding now uses locale-independent toLowerCase()",
+        "Downloaded 48376-byte replay ZIP opened successfully with 3 unique entries; compressed length equaled length for every store-mode entry and all entries had WebP signatures"
+      ]
+    },
+    {
+      "check_id": "check-browser-batch-workflow",
+      "command": "full-replay non-interfering in-app Browser workflow against local Vite port 4181",
+      "result": "passed",
+      "key_output": [
+        "TTool discovered 图片处理 and opened the embedded 图片批量压缩 page",
+        "Imported fixture-png.png, fixture-jpeg.jpg, fixture-webp.webp, and README.md through one multiple-file chooser; PNG/JPEG/WebP dimensions decoded and README.md stayed as an isolated recoverable error",
+        "Keep-source processing preserved PNG, JPEG, and WebP outputs; PNG and JPEG size increases were reported honestly instead of being labelled compressed",
+        "50% sizing, 90-degree rotation, and horizontal flip were reflected in preview and deterministic output names",
+        "JPEG conversion produced 3/3 successes and 1.5 MiB to 74 KiB measured output; WebP conversion produced 3/3 successes and 1.5 MiB to 47 KiB measured output",
+        "Individual WebP and a 48376-byte batch ZIP were written with expected names; the ZIP contained 3 unique store-mode WebP entries",
+        "Removing the invalid item and clearing the queue succeeded; final page warning/error logs were empty",
+        "Replay tab closed, Vite session stopped, port 4181 confirmed released, and exact test artifacts were moved to the Recycle Bin"
+      ],
+      "visual_review": "passed"
+    },
+    {
+      "check_id": "check-typecheck",
+      "command": "npm run typecheck",
+      "result": "passed",
+      "exit_code": 0,
+      "key_output": "tsc --noEmit completed without diagnostics"
+    },
+    {
+      "check_id": "check-ssr-smoke",
+      "command": "npm run smoke",
+      "result": "passed",
+      "exit_code": 0,
+      "key_output": "REGISTERED 6 including image-tool; SSR OK: 7 render targets passed"
+    },
+    {
+      "check_id": "check-production-build",
+      "command": "npm run build",
+      "result": "passed",
+      "exit_code": 0,
+      "key_output": "TypeScript, Vite production build, and build-info completed",
+      "notes": "Vite emitted only its non-failing renderer chunk-size advisory."
+    }
+  ],
+  "validation_budget": {
+    "correction_round": 1,
+    "full_validation_replays": 1,
+    "artifact_changed": true,
+    "delta_validation_status": "superseded_by_full_replay",
+    "dependent_validation_status": "satisfied_by_full_replay"
+  },
+  "non_blocking_observations": [
+    "The first independent acceptance correctly rejected an aggregate hash computed from a PowerShell payload that accidentally mixed display objects with manifest lines; the replay used only the exact 268-byte declared payload and independently exposed the corrected digest.",
+    "Vite emitted its non-failing renderer chunk-size advisory during the successful replay build."
+  ],
+  "boundaries": {
+    "current_desktop_pointer_keyboard_focus": "not_used_not_required",
+    "desktop_validation_route": "in_app_browser_background",
+    "browser_cleanup": "replay tab closed; Vite session 21135 stopped; port 4181 confirmed without a listener; exact test fixture and download artifacts moved to the Recycle Bin",
+    "plugin_sdk_surface": "unchanged",
+    "electron_bridge_surface": "unchanged",
+    "push_release": "out_of_scope"
+  }
+}

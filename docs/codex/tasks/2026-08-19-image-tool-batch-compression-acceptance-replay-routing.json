@@ -1,0 +1,46 @@
+{
+  "schema": "routing_decision_v1",
+  "unit_id": "node:image-tool-batch-compression-acceptance-replay",
+  "dispatch_event_id": "event:node-dispatched:image-tool-batch-compression-acceptance-replay:1",
+  "dispatch_kind": "node_dispatched",
+  "phase": "pre_dispatch",
+  "risk": "moderate",
+  "cognitive": {
+    "signals": ["three_or_more_reasoning_dependencies", "heterogeneous_or_large_evidence", "substantial_tradeoff_judgment"],
+    "stable_outcome": true,
+    "stable_boundary": true,
+    "stable_acceptance": true,
+    "derived_class": "complex",
+    "derived_profile": "sol_max"
+  },
+  "ultra": {
+    "enabled": false,
+    "ready_branches": 0,
+    "ready_branch_ids": [],
+    "dependency_graph_sha256": null,
+    "writes_disjoint_or_isolated": false,
+    "write_isolation_evidence": [],
+    "validation_nonconflicting": false,
+    "validation_resource_evidence": [],
+    "integration_owner": null,
+    "integration_owner_evidence": null,
+    "positive_wall_clock_savings": false,
+    "wall_clock_evidence": null
+  },
+  "requested": {
+    "model": "gpt-5.6-sol",
+    "reasoning": "max",
+    "custom_agent_override": "t-workflow-sol-max",
+    "override_kind": "custom_agent"
+  },
+  "surface": {
+    "supports_model_reasoning_override": true,
+    "supports_custom_agent_override": true,
+    "requested_model_supported": true,
+    "requested_reasoning_supported": true,
+    "evidence": ["capability:collaboration-custom-agent:t-workflow-sol-max"]
+  },
+  "actual": {"status":"unverified","model":null,"reasoning":null,"evidence":null,"fallback":null},
+  "parent": {"profile":"sol_max","inheritance":"explicit_override"},
+  "authorization": {"exact_profile_required":false,"higher_capability_fallback_allowed":false,"evidence":[]}
+}

@@ -31,6 +31,7 @@
 
 | Task | Project Area | Status | Output | Tokens | Duration | Cost | Updated |
 | --- | --- | --- | --- | ---: | ---: | ---: | --- |
+| TTool 图片工具批量与压缩扩展 | tools / image / web-desktop renderer | complete | 本地批量队列、统一尺寸/旋转/翻转、PNG/JPEG/WebP 压缩、真实体积反馈、逐项/ZIP 下载已完成；6/6 全量重放与独立验收通过；产品提交 `c3b13ac` | satisfied | accepted | local commit c3b13ac | 2026-08-20 |
 | 清理旧 workflow 规则副本 | workflow | completed | 活跃组织文档收敛为项目事实、约束、任务记录、inbox 和指标；旧规则/模板/员工副本非破坏归档 | unknown | unknown | unknown | 2026-07-08 |
 | TTool 项目组织文档初始化与旧项目迁移 | workflow | completed | Registry index upgraded; project context, metrics, overview, task inbox, batch folder, and task projections added | unknown | unknown | unknown | 2026-07-07 |
 | 初始化 PM + Employee 项目文档体系 | workflow | completed | Legacy PM/Employee organization documents preserved | unknown | unknown | unknown | 2026-07-07 |

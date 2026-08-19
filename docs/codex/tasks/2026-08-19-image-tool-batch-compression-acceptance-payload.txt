@@ -1,0 +1,42 @@
+packet_id: image-tool-batch-compression-acceptance
+graph_root_id: 2026-08-19-image-tool-batch-compression-root
+node_id: image-tool-batch-compression-acceptance
+dispatch_event_id: event:node-dispatched:image-tool-batch-compression-acceptance:1
+root_writer_epoch: 1
+route_sha256: f2bd1e1346e830825b77a147e559ea69146a51100c3cf1e3d1cc357cef90b7ea
+role: independent downstream acceptance reviewer
+mode: read-only evidence_review
+
+Objective:
+Independently decide whether the final TTool embedded image batch/compression change is acceptable against the frozen product brief and recorded evidence. Report blocking findings first; do not implement fixes.
+
+Required bounded inputs (read these exact files only as needed):
+- src/tools/impl/image-tool/index.tsx
+- README.md (only the 图片处理 section)
+- TOOLS.md (only section 9)
+- docs/codex/tasks/2026-08-19-image-tool-batch-compression-product-brief.md
+- docs/codex/tasks/2026-08-19-image-tool-batch-compression-artifact-manifest.json
+- docs/codex/tasks/2026-08-19-image-tool-batch-compression-impact-plan.json
+- docs/codex/tasks/2026-08-19-image-tool-batch-compression-testing-evidence.json
+- docs/codex/tasks/2026-08-19-image-tool-batch-compression-implementation-return.json
+
+Frozen identity:
+- final_artifact_id: wt-ace57ce-ce33cbb1e9f2d09cf80b0e937443846eedd916b27a5476312eb30a6aa44eb685
+- artifact_sha256: ce33cbb1e9f2d09cf80b0e937443846eedd916b27a5476312eb30a6aa44eb685
+- source bytes/hash: 75516 / 9f0fa34522b3ccc876fb4abd7583f36c05f8b481484ad6f606a72f097d151bb1
+- active_manifest_sha256: 6bf621b334538197c60188c697062ab95df42aa4029c3b0588575fce913773fb
+- acceptance_manifest_sha256: 2aede7a669e7931522b7a1d01c36bc8d81086f575c79a489760889a93a914523
+
+Review focus:
+1. MVP completeness: multi-file queue/limits, shared transforms, JPEG/WebP compression, honest PNG behavior, measured bytes/savings, sequential fault isolation, individual + ZIP downloads.
+2. Safety/correctness: stale async cancellation, resource cleanup, SSR guards, deterministic/collision-safe names, classic UTF-8 store ZIP headers/CRC/bounds.
+3. Evidence sufficiency: product manifest identity, typecheck, SSR, build, browser mixed valid/invalid workflow, JPEG/WebP outputs, downloaded 3-entry ZIP, cleanup/logs.
+4. Scope discipline: no SDK/manifest/Electron/dependency changes and docs match behavior; P1/P2 stay deferred.
+
+Constraints:
+- No file edits, apply_patch, Git mutation, commit, process start, test rerun, browser, web, external effects, or subagent spawn.
+- Read-only shell calls must be sequential; active_processes <= 2.
+- Do not inspect unrelated dirty files.
+- Treat only a concrete user-impacting defect, unsupported acceptance claim, identity mismatch, or scope violation as blocking.
+
+Return a compact JSON object with schema acceptance_review_v1, verdict (accepted|rejected), blocking_findings[], non_blocking_observations[], evidence_summary, reviewed_artifact_sha256, active_manifest_sha256, acceptance_manifest_sha256. Keep it under 1900 UTF-8 bytes.

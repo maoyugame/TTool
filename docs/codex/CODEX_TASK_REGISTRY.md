@@ -4,6 +4,7 @@
 
 | task_id | task_title | project_area | status | graph_root_id | summary_link | last_updated |
 | --- | --- | --- | --- | --- | --- | --- |
+| 2026-08-19-image-tool-batch-compression | TTool 图片工具批量与压缩扩展 | tools / image / web-desktop renderer | complete | 2026-08-19-image-tool-batch-compression-root | [Task State Projection](tasks/2026-08-19-image-tool-batch-compression.md#task-state-projection) | 2026-08-20 |
 | 2026-07-09-ttool-package-after-cursor-release | TTool Windows 桌面安装包打包（轻量小十字光标后） | release | worker_returned_to_merge_coordinator | 2026-07-09-ttool-package-after-cursor-root | [Task State Projection](tasks/2026-07-09-ttool-package-after-cursor-release.md#task-state-projection) | 2026-07-09 |
 | 2026-07-09-screenshot-cursor-contrast | TTool 截图 overlay 光标可见性优化 | screenshot-pin | worker_returned_to_merge_coordinator | 2026-07-09-screenshot-cursor-contrast-root | [Task State Projection](tasks/2026-07-09-screenshot-cursor-contrast.md#task-state-projection) | 2026-07-09 |
 | 2026-07-09-ttool-package-release | TTool Windows 桌面安装包打包 | release | worker_returned_to_merge_coordinator | 2026-07-09-ttool-package-root | [Task State Projection](tasks/2026-07-09-ttool-package-release.md#task-state-projection) | 2026-07-09 |

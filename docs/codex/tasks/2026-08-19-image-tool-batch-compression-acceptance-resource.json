@@ -1,0 +1,34 @@
+{
+  "schema": "context_resource_envelope_v1",
+  "graph_root_id": "2026-08-19-image-tool-batch-compression-root",
+  "node_id": "image-tool-batch-compression-acceptance",
+  "dispatch_event_id": "event:node-dispatched:image-tool-batch-compression-acceptance:1",
+  "grant_id": "grant:image-tool-batch-compression-acceptance:1",
+  "issuer_ref": "root-writer:current_session:image-tool-batch-compression-current-session-e1",
+  "holder": "worker:image-tool-batch-compression-acceptance",
+  "authorization_evidence_ref": "auth:image-tool-batch-compression-acceptance:1",
+  "issued_at": "2026-08-20T00:27:40+08:00",
+  "expires_at": "2026-08-20T02:27:40+08:00",
+  "instantaneous_nonrenewable": {
+    "outgoing_packet_utf8_bytes": 4096,
+    "return_packet_utf8_bytes": 2048,
+    "inline_raw_log_utf8_bytes": 2048,
+    "active_processes": 2,
+    "worker_fanout": 1
+  },
+  "renewable_grants": [
+    {
+      "grant_id": "grant:image-tool-batch-compression-acceptance:tool-calls:1",
+      "issuer_ref": "root-writer:current_session:image-tool-batch-compression-current-session-e1",
+      "holder": "worker:image-tool-batch-compression-acceptance",
+      "authorization_evidence_ref": "auth:image-tool-batch-compression-acceptance:1",
+      "issued_at": "2026-08-20T00:27:40+08:00",
+      "expires_at": "2026-08-20T02:27:40+08:00",
+      "cumulative_limit": 30,
+      "inherited_usage": 0,
+      "consumed_usage": 0,
+      "renewal_source": "external_issuer"
+    }
+  ],
+  "high_risk_one_shot_authority": null
+}

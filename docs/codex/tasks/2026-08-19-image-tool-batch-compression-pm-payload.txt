@@ -1,0 +1,33 @@
+packet_schema: delegated_work_v2
+execution_role: advisory_product_manager
+graph_root_id: 2026-08-19-image-tool-batch-compression-root
+node_id: image-tool-product-research
+dispatch_event_id: event:node-dispatched:image-tool-product-research:1
+goal: Research current comparable image utilities from official product/documentation pages and recommend a bounded TTool product scope centered on required batch operations and compression.
+done_when:
+- Compare TinyPNG, Squoosh, iLoveIMG, and at least one local/desktop batch image utility on batch workflow, compression controls, output feedback, download flow, privacy, and adjacent features.
+- Identify the smallest credible MVP for TTool batch processing and compression, with explicit P1/P2 follow-ups and reasons not to turn the tool into a heavy editor.
+- Provide official URLs for every material product claim; label product judgment or inference separately.
+scope:
+- Read-only web research and bounded product synthesis.
+- Inspect the existing TTool image-tool behavior only if needed to avoid proposing duplicate capabilities.
+out_of_scope:
+- Source, documentation, workflow-record, Git, dependency, plugin SDK, Electron, release, or external-account mutations.
+- Implementation, testing, acceptance, commits, worker fan-out, or publication.
+constraints:
+- Use current official first-party product/documentation pages; do not rely on SEO summaries.
+- Treat batch processing and compression as required. Recommend other functions only when the value and sequencing are explicit.
+- Keep the final return under 2048 UTF-8 bytes; include a compact competitor matrix, MVP/P1/P2, key risks, and URLs.
+routing_decision_ref: docs/codex/tasks/2026-08-19-image-tool-batch-compression-pm-routing.json
+resource_envelope_ref: docs/codex/tasks/2026-08-19-image-tool-batch-compression-pm-resource.json
+resource_rule:
+- Run all tool calls sequentially; no Promise.all, parallel shell commands, background jobs, or subagents.
+- Do not write files or mutate any external state.
+effect_intent_refs: []
+effect_semantics: none
+effect_idempotency_key: null
+physical_fence_refs: []
+validation:
+- Each factual row cites at least one official URL.
+- Recommendations explicitly distinguish required MVP from deferred improvements.
+return_target: collaboration mailbox to /root; <=2048 UTF-8 bytes with packet_id, official URLs, matrix, MVP/P1/P2, risks, and next recommendation.

@@ -1,0 +1,34 @@
+packet_schema: delegated_work_v2
+execution_role: implementation
+graph_root_id: 2026-08-19-image-tool-batch-compression-root
+node_id: image-tool-batch-compression-implementation
+dispatch_event_id: event:node-dispatched:image-tool-batch-compression-implementation:1
+goal: Replace the current single-image implementation with the frozen local batch-compressor MVP while preserving existing image transforms and export behavior.
+done_when:
+- File picker and drag/drop accept multiple files; enforce 20-file and 200-MiB batch limits plus existing per-file/type/edge checks.
+- Show a selectable queue with source name/type/dimensions/bytes, ready/processing/success/error states, item removal, and clear-all; invalid/corrupt items remain understandable and do not block valid items.
+- Shared settings support original size, percentage, max-long-edge without enlargement, and exact width/height; retain 90-degree rotation, horizontal/vertical flips, selected-item original/output preview, PNG/JPEG/WebP export, JPEG background, and reset.
+- Batch processing decodes/encodes strictly sequentially, isolates per-item failures, preserves source File bytes, and reports progress plus actual per-item/aggregate output bytes and savings. JPEG/WebP use quality; PNG is honestly labeled lossless re-encode and may grow.
+- Every successful item downloads individually. Download-all creates a standards-valid store-mode ZIP without a dependency, uses collision-safe UTF-8 entry names, contains each successful result once, and has bounded failure messaging.
+- Re-run/remove/clear/unmount release decoded rasters, source/result/archive Object URLs, timers, and stale async work. SSR registration remains safe and search metadata includes batch/compress terms.
+scope:
+- Read the product brief, current image-tool module, and minimal TTool contracts.
+- Write only `src/tools/impl/image-tool/index.tsx`.
+out_of_scope:
+- Any other source/doc/workflow path, dependency/package change, plugin SDK/manifest/loader, Electron/platform bridge, cloud upload, Git index/commit/push, release, browser acceptance, or worker fan-out.
+constraints:
+- Use React/browser primitives already available; no new imports outside current project contracts.
+- Colors use CSS variables. Keep keyboard/focus semantics and responsive behavior.
+- Do not hold decoded rasters for the whole batch; one selected preview raster plus one processing raster maximum.
+- Run every tool/command sequentially. Never use Promise.all, parallel calls, background jobs, or subagents; the process envelope allows npm child processes, not parallel command fan-out.
+routing_decision_ref: docs/codex/tasks/2026-08-19-image-tool-batch-compression-implementation-routing.json
+resource_envelope_ref: docs/codex/tasks/2026-08-19-image-tool-batch-compression-implementation-resource.json
+effect_intent_refs: []
+effect_semantics: none
+effect_idempotency_key: null
+physical_fence_refs: []
+validation:
+- Audit lifecycle, ZIP headers/CRC/central directory, MIME/dimensions, queue state, accessibility, SSR, and scope.
+- Run `npm run typecheck`, then `npm run smoke`, strictly sequentially.
+- After all edits/checks, return the final SHA-256 and file byte count.
+return_target: collaboration mailbox to /root; <=2048 UTF-8 bytes. Return strict node_return_v1 identities/digests plus concise changes, sequential checks, risks, and next action. Do not commit.

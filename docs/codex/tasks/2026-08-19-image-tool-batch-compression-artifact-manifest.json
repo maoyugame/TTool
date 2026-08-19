@@ -1,0 +1,11 @@
+{
+  "schema": "ttool.bounded-source-manifest.v1",
+  "baseline": "ace57ce156de1f2432fe1d304b9b5fb37f4d6b96",
+  "entries": [
+    {"path":"README.md","size":15851,"sha256":"237d7b0076b99e1fda2ab4bd4205784de5b475a48ee743e0e8cd9dc172cfa915"},
+    {"path":"TOOLS.md","size":14331,"sha256":"587063d7d3f3b694091bb7dd4c83a952ca53d15a20b9942aae2a5fffb705c8e9"},
+    {"path":"src/tools/impl/image-tool/index.tsx","size":75547,"sha256":"7ff7232cb0c9d62dd3c563f93254f5887c356a59d477d9d7f128843f4ce316ce"}
+  ],
+  "artifact_hash_method": "sha256 of each entry as path<TAB>size<TAB>sha256<LF>, in manifest order",
+  "artifact_sha256": "4cead510027288cba1e275f9aad33143653463d78835eee03eb866a438bf9753"
+}

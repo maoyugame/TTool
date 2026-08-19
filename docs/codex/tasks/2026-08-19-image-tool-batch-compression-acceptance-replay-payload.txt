@@ -1,0 +1,45 @@
+packet_id: image-tool-batch-compression-acceptance-replay
+graph_root_id: 2026-08-19-image-tool-batch-compression-root
+node_id: image-tool-batch-compression-acceptance-replay
+dispatch_event_id: event:node-dispatched:image-tool-batch-compression-acceptance-replay:1
+root_writer_epoch: 1
+route_sha256: a899ba87de8e40dbc7a4902399056e601b172a3d1050932852a6ea51eafca715
+role: independent downstream acceptance rereviewer
+mode: read-only evidence_review after correction round 1 and full replay
+
+Objective:
+Re-evaluate the corrected final artifact. Focus on whether every finding from the first rejected review is now closed and whether the frozen MVP has sufficient current evidence. Do not implement fixes.
+
+Required exact inputs:
+- docs/codex/tasks/2026-08-19-image-tool-batch-compression-acceptance-review-1.json
+- docs/codex/tasks/2026-08-19-image-tool-batch-compression-artifact-manifest.json
+- docs/codex/tasks/2026-08-19-image-tool-batch-compression-impact-plan.json
+- docs/codex/tasks/2026-08-19-image-tool-batch-compression-testing-evidence.json
+- src/tools/impl/image-tool/index.tsx
+- README.md (图片处理 section only)
+- TOOLS.md (section 9 only)
+- docs/codex/tasks/2026-08-19-image-tool-batch-compression-product-brief.md
+
+Corrected frozen identity:
+- final_artifact_id: wt-ace57ce-4cead510027288cba1e275f9aad33143653463d78835eee03eb866a438bf9753
+- exact artifact algorithm: SHA-256 of each manifest entry as path<TAB>size<TAB>sha256<LF>, in manifest order
+- exact artifact payload length: 268 UTF-8 bytes
+- artifact_sha256: 4cead510027288cba1e275f9aad33143653463d78835eee03eb866a438bf9753
+- source bytes/hash: 75547 / 7ff7232cb0c9d62dd3c563f93254f5887c356a59d477d9d7f128843f4ce316ce
+- active_manifest_sha256: c4ab674e4b8b0eb399e235ba38aa458f91c5ba69099608925539e5c4c86c1767
+- acceptance_manifest_sha256: fe225b7a19082e0246f00582deb72ea5ac605eaf01174ff29b87c96ef85f9346
+
+Corrections and replay claims to verify:
+1. ZIP name collision folding now uses locale-independent toLowerCase().
+2. Preview decoding is suppressed while isProcessing and resumes afterward, avoiding concurrent selected-preview + processing decode.
+3. The exact three live file entries match the manifest and recompute to 4cead510.
+4. Full replay passed typecheck, SSR 7/7, build, source/ZIP audit, and post-test identity.
+5. One chooser imported PNG 1254x1254, JPEG 256x256, WebP 627x627, and invalid README.md. Keep-source produced PNG/JPEG/WebP with honest size-growth text; JPEG and WebP conversions each succeeded 3/3 with shared 50%, 90-degree rotation, and horizontal flip.
+6. Runtime ZIP was 48376 bytes with 3 unique store-mode WebP entries and valid WebP signatures; queue cleanup left no page warnings/errors and all test-owned artifacts were recycled.
+
+Constraints:
+- No edits, apply_patch, Git mutation, process/test/browser/web runs, external effects, unrelated dirty-file inspection, or child workers.
+- Sequential read-only shell calls only; active_processes <=2.
+- Treat only a concrete user-impacting defect, unresolved first-review finding, identity/evidence mismatch, or scope violation as blocking.
+
+Return compact JSON: schema acceptance_review_v1; verdict accepted|rejected; blocking_findings[]; non_blocking_observations[]; evidence_summary; reviewed_artifact_sha256; active_manifest_sha256; acceptance_manifest_sha256. Under 1900 UTF-8 bytes.

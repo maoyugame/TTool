@@ -1,0 +1,54 @@
+{
+  "schema": "dispatch_v1",
+  "graph_root_id": "2026-08-19-image-tool-batch-compression-root",
+  "node_id": "image-tool-batch-compression-acceptance",
+  "node_dispatched": {
+    "event_id": "event:node-dispatched:image-tool-batch-compression-acceptance:1"
+  },
+  "dispatch_event_id": "event:node-dispatched:image-tool-batch-compression-acceptance:1",
+  "dispatch_contract": "bound_v1",
+  "retry_of_dispatch_event_id": null,
+  "root_writer_epoch": 1,
+  "policy_digest": "50f8cbdc12ba543a334d8f5b31b40aacdc4879b6364c1cedf2ca8ffbc19d0b50",
+  "routing_decision_ref": "route:image-tool-batch-compression-acceptance:1",
+  "routing_decision_sha256": "f2bd1e1346e830825b77a147e559ea69146a51100c3cf1e3d1cc357cef90b7ea",
+  "resource_envelope_ref": "grant:image-tool-batch-compression-acceptance:1",
+  "resource_grant": {
+    "schema": "context_resource_envelope_v1",
+    "graph_root_id": "2026-08-19-image-tool-batch-compression-root",
+    "node_id": "image-tool-batch-compression-acceptance",
+    "dispatch_event_id": "event:node-dispatched:image-tool-batch-compression-acceptance:1",
+    "grant_id": "grant:image-tool-batch-compression-acceptance:1",
+    "issuer_ref": "root-writer:current_session:image-tool-batch-compression-current-session-e1",
+    "holder": "worker:image-tool-batch-compression-acceptance",
+    "authorization_evidence_ref": "auth:image-tool-batch-compression-acceptance:1",
+    "issued_at": "2026-08-20T00:27:40+08:00",
+    "expires_at": "2026-08-20T02:27:40+08:00",
+    "instantaneous_nonrenewable": {
+      "outgoing_packet_utf8_bytes": 4096,
+      "return_packet_utf8_bytes": 2048,
+      "inline_raw_log_utf8_bytes": 2048,
+      "active_processes": 2,
+      "worker_fanout": 1
+    },
+    "renewable_grants": [
+      {
+        "grant_id": "grant:image-tool-batch-compression-acceptance:tool-calls:1",
+        "issuer_ref": "root-writer:current_session:image-tool-batch-compression-current-session-e1",
+        "holder": "worker:image-tool-batch-compression-acceptance",
+        "authorization_evidence_ref": "auth:image-tool-batch-compression-acceptance:1",
+        "issued_at": "2026-08-20T00:27:40+08:00",
+        "expires_at": "2026-08-20T02:27:40+08:00",
+        "cumulative_limit": 30,
+        "inherited_usage": 0,
+        "consumed_usage": 0,
+        "renewal_source": "external_issuer"
+      }
+    ],
+    "high_risk_one_shot_authority": null
+  },
+  "dispatch_packet_sha256": "4743b14c41cd39b484ed2e28634b102dcaf80a459551c4f7b7d8e397bd9ea67b",
+  "effect_semantics": "none",
+  "effect_idempotency_key": null,
+  "physical_fence_refs": []
+}
