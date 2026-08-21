@@ -42,6 +42,16 @@ function coverRectBetweenSizes(rect, source, target) {
   return { x: left, y: top, width: right - left, height: bottom - top }
 }
 
+function selectionForViewport(viewport) {
+  assert.ok(viewport.width >= 4, `Hidden overlay viewport is too narrow: ${viewport.width}`)
+  assert.ok(viewport.height >= 4, `Hidden overlay viewport is too short: ${viewport.height}`)
+  const left = Math.floor(viewport.width / 4)
+  const top = Math.floor(viewport.height / 4)
+  const right = Math.floor(viewport.width * 3 / 4)
+  const bottom = Math.floor(viewport.height * 3 / 4)
+  return { x: left, y: top, width: right - left, height: bottom - top }
+}
+
 async function runParent() {
   const { spawn } = require('node:child_process')
   const electron = require('electron')
@@ -82,9 +92,15 @@ async function runParent() {
     assert.equal(exitCode, 0, `Screenshot coordinate regression failed with exit code ${exitCode}`)
     assert.equal(fs.existsSync(resultPath), true, 'Screenshot coordinate regression did not write evidence')
     const result = JSON.parse(fs.readFileSync(resultPath, 'utf8'))
-    assert.ok(result.viewport.width >= 768, `Unexpected hidden overlay width ${result.viewport.width}`)
-    assert.ok(result.viewport.height >= 432, `Unexpected hidden overlay height ${result.viewport.height}`)
-    assert.deepEqual(result.selection, { x: 256, y: 144, width: 512, height: 288 })
+    assert.deepEqual(selectionForViewport({ width: 683, height: 384 }), {
+      x: 170,
+      y: 96,
+      width: 342,
+      height: 192,
+    }, 'Windows runner viewport regression must remain covered')
+    const expectedSelection = selectionForViewport(result.viewport)
+    assert.deepEqual(result.intendedSelection, expectedSelection)
+    assert.deepEqual(result.selection, expectedSelection)
     assert.deepEqual(result.displayBounds, {
       width: result.viewport.width * 2,
       height: result.viewport.height * 2,
@@ -103,7 +119,7 @@ async function runParent() {
 
     const remainingPids = await waitForProcessesToExit(result.ownedPids)
     assert.deepEqual(remainingPids, [], `Test-owned Electron processes are still running: ${remainingPids.join(', ')}`)
-    console.log(`screenshot overlay coordinate test passed (DPR ${result.devicePixelRatio})`)
+    console.log(`screenshot overlay coordinate test passed (${result.viewport.width}x${result.viewport.height}, DPR ${result.devicePixelRatio})`)
   } finally {
     if (child && child.exitCode === null) child.kill()
     fs.rmSync(tempRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
@@ -122,8 +138,8 @@ async function runElectronChild() {
   try {
     await app.whenReady()
     const win = new BrowserWindow({
-      width: 1024,
-      height: 576,
+      width: 683,
+      height: 384,
       useContentSize: true,
       frame: false,
       show: false,
@@ -150,10 +166,20 @@ addEventListener('mouseup', (event) => {
 });
 </script></body></html>`
     await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
+    const viewport = await win.webContents.executeJavaScript(`({ width: innerWidth, height: innerHeight })`)
+    const intendedSelection = selectionForViewport(viewport)
+    const endX = intendedSelection.x + intendedSelection.width
+    const endY = intendedSelection.y + intendedSelection.height
     win.webContents.focus()
-    win.webContents.sendInputEvent({ type: 'mouseDown', x: 256, y: 144, button: 'left', clickCount: 1 })
-    win.webContents.sendInputEvent({ type: 'mouseMove', x: 768, y: 432, movementX: 512, movementY: 288 })
-    win.webContents.sendInputEvent({ type: 'mouseUp', x: 768, y: 432, button: 'left', clickCount: 1 })
+    win.webContents.sendInputEvent({ type: 'mouseDown', x: intendedSelection.x, y: intendedSelection.y, button: 'left', clickCount: 1 })
+    win.webContents.sendInputEvent({
+      type: 'mouseMove',
+      x: endX,
+      y: endY,
+      movementX: intendedSelection.width,
+      movementY: intendedSelection.height,
+    })
+    win.webContents.sendInputEvent({ type: 'mouseUp', x: endX, y: endY, button: 'left', clickCount: 1 })
     await delay(50)
 
     const renderer = await win.webContents.executeJavaScript(`({
@@ -162,6 +188,8 @@ addEventListener('mouseup', (event) => {
       devicePixelRatio,
     })`)
     assert.ok(renderer.selection, 'Targeted Electron pointer input did not produce a selection')
+    assert.deepEqual(renderer.viewport, viewport, 'Hidden overlay viewport changed during pointer injection')
+    assert.deepEqual(renderer.selection, intendedSelection, 'Electron pointer selection did not match the viewport-relative target')
 
     const displayBounds = {
       width: renderer.viewport.width * 2,
@@ -192,6 +220,7 @@ addEventListener('mouseup', (event) => {
     const ownedPids = [...new Set([process.pid, ...app.getAppMetrics().map((metric) => metric.pid)])]
     fs.writeFileSync(process.env.TTOOL_SCREENSHOT_COORDINATE_TEST_RESULT, JSON.stringify({
       viewport: renderer.viewport,
+      intendedSelection,
       selection: renderer.selection,
       cropRect,
       displayRect: resolved.displayRect,
