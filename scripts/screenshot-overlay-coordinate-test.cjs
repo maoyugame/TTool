@@ -85,13 +85,17 @@ async function runParent() {
     assert.ok(result.viewport.width >= 768, `Unexpected hidden overlay width ${result.viewport.width}`)
     assert.ok(result.viewport.height >= 432, `Unexpected hidden overlay height ${result.viewport.height}`)
     assert.deepEqual(result.selection, { x: 256, y: 144, width: 512, height: 288 })
-    assert.deepEqual(result.framePixelSize, {
+    assert.deepEqual(result.displayBounds, {
       width: result.viewport.width * 2,
       height: result.viewport.height * 2,
     })
+    assert.deepEqual(result.framePixelSize, {
+      width: result.viewport.width * 3,
+      height: result.viewport.height * 3,
+    })
     const expectedCrop = coverRectBetweenSizes(result.selection, result.viewport, result.framePixelSize)
-    const expectedDisplayRect = mapRectBetweenSizes(result.selection, result.viewport, { width: 1280, height: 720 })
-    const legacyCrop = mapRectBetweenSizes(result.selection, { width: 1280, height: 720 }, result.framePixelSize)
+    const expectedDisplayRect = mapRectBetweenSizes(result.selection, result.viewport, result.displayBounds)
+    const legacyCrop = mapRectBetweenSizes(result.selection, result.displayBounds, result.framePixelSize)
     assert.deepEqual(result.cropRect, expectedCrop)
     assert.deepEqual(result.displayRect, expectedDisplayRect)
     assert.notDeepEqual(result.cropRect, legacyCrop, 'Fixture must distinguish viewport-aware mapping from the legacy display-bounds mapping')
@@ -159,11 +163,15 @@ addEventListener('mouseup', (event) => {
     })`)
     assert.ok(renderer.selection, 'Targeted Electron pointer input did not produce a selection')
 
-    const display = { id: 1, bounds: { width: 1280, height: 720 }, scaleFactor: 1.5 }
-    const resolved = resolveOverlaySelection(display, renderer.selection, renderer.viewport)
-    const framePixelSize = {
+    const displayBounds = {
       width: renderer.viewport.width * 2,
       height: renderer.viewport.height * 2,
+    }
+    const display = { id: 1, bounds: displayBounds, scaleFactor: 1.5 }
+    const resolved = resolveOverlaySelection(display, renderer.selection, renderer.viewport)
+    const framePixelSize = {
+      width: displayBounds.width * display.scaleFactor,
+      height: displayBounds.height * display.scaleFactor,
     }
     let cropRect = null
     const frame = {
@@ -187,6 +195,7 @@ addEventListener('mouseup', (event) => {
       selection: renderer.selection,
       cropRect,
       displayRect: resolved.displayRect,
+      displayBounds,
       framePixelSize,
       devicePixelRatio: renderer.devicePixelRatio,
       ownedPids,
