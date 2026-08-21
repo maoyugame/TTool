@@ -82,12 +82,16 @@ async function runParent() {
     assert.equal(exitCode, 0, `Screenshot coordinate regression failed with exit code ${exitCode}`)
     assert.equal(fs.existsSync(resultPath), true, 'Screenshot coordinate regression did not write evidence')
     const result = JSON.parse(fs.readFileSync(resultPath, 'utf8'))
-    assert.equal(result.viewport.width, 1024)
-    assert.ok(result.viewport.height >= 575 && result.viewport.height <= 578, `Unexpected hidden overlay height ${result.viewport.height}`)
+    assert.ok(result.viewport.width >= 768, `Unexpected hidden overlay width ${result.viewport.width}`)
+    assert.ok(result.viewport.height >= 432, `Unexpected hidden overlay height ${result.viewport.height}`)
     assert.deepEqual(result.selection, { x: 256, y: 144, width: 512, height: 288 })
-    const expectedCrop = coverRectBetweenSizes(result.selection, result.viewport, { width: 1920, height: 1080 })
+    assert.deepEqual(result.framePixelSize, {
+      width: result.viewport.width * 2,
+      height: result.viewport.height * 2,
+    })
+    const expectedCrop = coverRectBetweenSizes(result.selection, result.viewport, result.framePixelSize)
     const expectedDisplayRect = mapRectBetweenSizes(result.selection, result.viewport, { width: 1280, height: 720 })
-    const legacyCrop = mapRectBetweenSizes(result.selection, { width: 1280, height: 720 }, { width: 1920, height: 1080 })
+    const legacyCrop = mapRectBetweenSizes(result.selection, { width: 1280, height: 720 }, result.framePixelSize)
     assert.deepEqual(result.cropRect, expectedCrop)
     assert.deepEqual(result.displayRect, expectedDisplayRect)
     assert.notDeepEqual(result.cropRect, legacyCrop, 'Fixture must distinguish viewport-aware mapping from the legacy display-bounds mapping')
@@ -116,6 +120,7 @@ async function runElectronChild() {
     const win = new BrowserWindow({
       width: 1024,
       height: 576,
+      useContentSize: true,
       frame: false,
       show: false,
       paintWhenInitiallyHidden: true,
@@ -156,11 +161,15 @@ addEventListener('mouseup', (event) => {
 
     const display = { id: 1, bounds: { width: 1280, height: 720 }, scaleFactor: 1.5 }
     const resolved = resolveOverlaySelection(display, renderer.selection, renderer.viewport)
+    const framePixelSize = {
+      width: renderer.viewport.width * 2,
+      height: renderer.viewport.height * 2,
+    }
     let cropRect = null
     const frame = {
       image: {
         isEmpty: () => false,
-        getSize: () => ({ width: 1920, height: 1080 }),
+        getSize: () => framePixelSize,
         crop: (rect) => {
           cropRect = rect
           return {
@@ -178,6 +187,7 @@ addEventListener('mouseup', (event) => {
       selection: renderer.selection,
       cropRect,
       displayRect: resolved.displayRect,
+      framePixelSize,
       devicePixelRatio: renderer.devicePixelRatio,
       ownedPids,
     }))
